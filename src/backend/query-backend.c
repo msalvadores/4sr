@@ -315,187 +315,84 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 	return ret;
     }
 
-    /* query like (_ _ p _) */
-    if (tobind & FS_BIND_BY_SUBJECT && svl == 0) {
-	if (fs_rid_vector_length(pv) != 0) {
-#ifdef DEBUG_BRANCH
-fs_error(LOG_INFO, "bind() branch");
-#endif
-	    const int ml = mvl ? mvl : 1;
-	    for (int p=0; p<pvl && count<limit; p++) {
-		fs_ptree *pt = fs_backend_get_ptree(be, pv->data[p], 0);
-		if (!pt) continue;
-		for (int m=0; m<ml && count<limit; m++) {
-		    fs_rid quad[4] = { FS_RID_NULL, FS_RID_NULL, pv->data[p],
-				       FS_RID_NULL };
-		    fs_rid mrid;
-		    if (mvl) mrid = mv->data[m];
-		    else mrid = FS_RID_NULL;
-		    fs_ptree_it *it = fs_ptree_traverse(pt, mrid);
-		    while (it && fs_ptree_traverse_next(it, quad) && count<limit) {
-			if (!bind_same(quad, tobind)) continue;
-			if (!graph_ok(quad, tobind)) continue;
-			count++;
-			bind_results(quad, tobind, ret);
-		    }
-		    fs_ptree_it_free(it);
-		}
-	    }
-	} else {
-#ifdef DEBUG_BRANCH
-fs_error(LOG_INFO, "bind() branch");
-#endif
-	    const int ml = mvl ? mvl : 1;
-	    for (int p=0; p<be->ptree_length && count<limit; p++) {
-		fs_backend_ptree_limited_open(be, p); 
-		fs_ptree *pt = be->ptrees_priv[p].ptree_s;
-		if (!pt) continue;
-		for (int m=0; m<ml; m++) {
-		    fs_rid quad[4] = { FS_RID_NULL, FS_RID_NULL,
-				       be->ptrees_priv[p].pred, FS_RID_NULL };
-		    fs_rid mrid;
-		    if (mvl) mrid = mv->data[m];
-		    else mrid = FS_RID_NULL;
-		    fs_ptree_it *it = fs_ptree_traverse(pt, mrid);
-		    while (it && fs_ptree_traverse_next(it, quad) && count<limit) {
-			if (!bind_same(quad, tobind)) continue;
-			if (!graph_ok(quad, tobind)) continue;
-			count++;
-			bind_results(quad, tobind, ret);
-		    }
-		    fs_ptree_it_free(it);
-		}
-	    }
-	}
-    /* query like (_ s p _) */
-    } else if (fs_rid_vector_length(pv) != 0) {
-	if (tobind & FS_BIND_BY_SUBJECT) {
-#ifdef DEBUG_BRANCH
-fs_error(LOG_INFO, "bind() branch");
-#endif
-	    const int ml = mvl ? mvl : 1;
-	    const int ol = ovl ? ovl : 1;
-	    for (int p=0; p<pvl && count<limit; p++) {
-		fs_ptree *pt = fs_backend_get_ptree(be, pv->data[p], 0);
-		if (!pt) continue;
-		for (int s=0; s<svl; s++) {
-		    fs_rid pk = sv->data[s];
-		    fs_rid pair[2] = { FS_RID_NULL, FS_RID_NULL };
-		    for (int m=0; m<ml && count<limit; m++) {
-			for (int o=0; o<ol; o++) {
-			    if (mvl) pair[0] = mv->data[m];
-			    if (ovl) pair[1] = ov->data[o];
-			    fs_ptree_it *it = fs_ptree_search(pt, pk, pair);
-			    while (it && fs_ptree_it_next(it, pair) && count<limit) {
-				const fs_rid quad[4] =
-				    { pair[0], pk, pv->data[p], pair[1] };
-				if (!bind_same(quad, tobind)) continue;
-				if (!graph_ok(quad, tobind)) continue;
-				count++;
-				bind_results(quad, tobind, ret);
-			    }
-			    fs_ptree_it_free(it);
-			}
-		    }
-		}
-	    }
-	} else {
-#ifdef DEBUG_BRANCH
-fs_error(LOG_INFO, "bind() branch");
-#endif
-	    const int ml = mvl ? mvl : 1;
-	    const int sl = svl ? svl : 1;
-	    for (int p=0; p<pvl && count<limit; p++) {
-		fs_ptree *pt = fs_backend_get_ptree(be, pv->data[p], 1);
-		if (!pt) continue;
-		for (int o=0; o<ovl && count<limit; o++) {
-		    fs_rid pk = ov->data[o];
-		    fs_rid pair[2] = { FS_RID_NULL, FS_RID_NULL };
-		    for (int m=0; m<ml; m++) {
-			for (int s=0; s<sl && count<limit; s++) {
-			    if (mvl) pair[0] = mv->data[m];
-			    if (svl) pair[1] = sv->data[s];
-			    fs_ptree_it *it = fs_ptree_search(pt, pk, pair);
-			    while (it && fs_ptree_it_next(it, pair) && count<limit) {
-				const fs_rid quad[4] = {
-				    pair[0], pair[1], pv->data[p], pk
-				};
-				if (!bind_same(quad, tobind)) continue;
-				if (!graph_ok(quad, tobind)) continue;
-				count++;
-				bind_results(quad, tobind, ret);
-			    }
-			    fs_ptree_it_free(it);
-			}
-		    }
-		}
-	    }
-	}
+    int nloops = -1;
+    int by_subject = tobind & FS_BIND_BY_SUBJECT;
+
+    fs_rid_vector **looper = NULL;
+    if (by_subject && svl == 0) {
+        nloops=1;
     } else {
-	if (tobind & FS_BIND_BY_SUBJECT) {
-#ifdef DEBUG_BRANCH
-fs_error(LOG_INFO, "bind() branch");
-#endif
-	    const int ml = mvl ? mvl : 1;
-	    const int ol = ovl ? ovl : 1;
-	    for (int p=0; p<be->ptree_length && count<limit; p++) {
-                fs_backend_ptree_limited_open(be, p);
-		fs_ptree *pt = be->ptrees_priv[p].ptree_s;
-		if (!pt) continue;
-		for (int s=0; s<svl && count<limit; s++) {
-		    fs_rid pk = sv->data[s];
-		    fs_rid pair[2] = { FS_RID_NULL, FS_RID_NULL };
-		    for (int m=0; m<ml && count<limit; m++) {
-			for (int o=0; o<ol && count<limit; o++) {
-			    if (mvl) pair[0] = mv->data[m];
-			    if (ovl) pair[1] = ov->data[o];
-			    fs_ptree_it *it = fs_ptree_search(pt, pk, pair);
-			    while (it && fs_ptree_it_next(it, pair) && count<limit) {
-				const fs_rid quad[4] =
-				    { pair[0], pk, be->ptrees_priv[p].pred, pair[1] };
-				if (!bind_same(quad, tobind)) continue;
-				if (!graph_ok(quad, tobind)) continue;
-				count++;
-				bind_results(quad, tobind, ret);
-			    }
-			    fs_ptree_it_free(it);
-			}
-		    }
-		}
-	    }
-	} else {
-#ifdef DEBUG_BRANCH
-fs_error(LOG_INFO, "bind() branch");
-#endif
-	    const int ml = mvl ? mvl : 1;
-	    const int sl = svl ? svl : 1;
-	    for (int p=0; p<be->ptree_length && count<limit; p++) {
-                fs_backend_ptree_limited_open(be, p);
-		fs_ptree *pt = be->ptrees_priv[p].ptree_o;
-		if (!pt) continue;
-		for (int o=0; o<ovl && count<limit; o++) {
-		    fs_rid pk = ov->data[o];
-		    fs_rid pair[2] = { FS_RID_NULL, FS_RID_NULL };
-		    for (int m=0; m<ml && count<limit; m++) {
-			for (int s=0; s<sl && count<limit; s++) {
-			    if (mvl) pair[0] = mv->data[m];
-			    if (svl) pair[1] = sv->data[s];
-			    fs_ptree_it *it = fs_ptree_search(pt, pk, pair);
-			    while (it && fs_ptree_it_next(it, pair) && count<limit) {
-				const fs_rid quad[4] =
-				    { pair[0], pair[1], be->ptrees_priv[p].pred, pk };
-				if (!bind_same(quad, tobind)) continue;
-				if (!graph_ok(quad, tobind)) continue;
-				count++;
-				bind_results(quad, tobind, ret);
-			    }
-			    fs_ptree_it_free(it);
-			}
-		    }
-		}
-	    }
-	}
+        nloops=3;
+        looper = calloc(3, sizeof(fs_rid_vector *));
+        looper[1] = mv;
+        if (by_subject) {
+            looper[0] = sv;
+            looper[2] = ov;
+        } else {
+            looper[0] = ov;
+            looper[2] = sv;
+        }
     }
+
+   int tree_object_flag = by_subject ? 0 : 1;
+   int pi = pvl ? pvl : be->ptree_length;
+   for (int p=0; p<pi && count<limit; p++) {
+       if (!pvl) fs_backend_ptree_limited_open(be,p);
+       fs_ptree *pt = pvl ? fs_backend_get_ptree(be, pv->data[p], tree_object_flag) : 
+       (tobind & FS_BIND_BY_SUBJECT ? be->ptrees_priv[p].ptree_s : be->ptrees_priv[p].ptree_o );
+       fs_rid pred = pvl ? pv->data[p] : be->ptrees_priv[p].pred;
+       if (!pt) continue; 
+
+       if (nloops == 1) { //1 loop, always MV, always quad selector and never pair search
+           fs_rid_vector *index=mv;
+           int i0 = fs_rid_vector_length(index);
+           i0 = i0 ? i0 : 1;
+           for (int j0=0; j0 < i0 && count<limit ;j0++ ) {
+		        fs_rid quad[4] = { FS_RID_NULL, 
+                                   FS_RID_NULL,
+                                   pred , 
+                                   FS_RID_NULL };
+                fs_rid mrid = mvl ? index->data[j0] : FS_RID_NULL;
+                fs_ptree_it *it = fs_ptree_traverse(pt, mrid);
+                while (it && fs_ptree_traverse_next(it, quad) && count<limit) {
+                    if (!bind_same(quad, tobind)) continue;
+                    if (!graph_ok(quad, tobind)) continue;
+                    count++;
+                    bind_results(quad, tobind, ret);
+                }
+                fs_ptree_it_free(it);
+           }
+       } else { //3 loops  always pair serch
+           int i0 = fs_rid_vector_length(looper[0]);
+           int z1 = fs_rid_vector_length(looper[1]);
+           int i1 = z1 ? z1 : 1;
+           int z2 = fs_rid_vector_length(looper[2]);
+           int i2 = z2 ? z2 : 1;
+           for (int j0=0; j0 < i0 && count<limit ;j0++ ) {
+               fs_rid pk = looper[0]->data[j0];
+               fs_rid pair[2] = { FS_RID_NULL, FS_RID_NULL };
+               for (int j1=0; j1 < i1 && count<limit ;j1++ ) {
+               for (int j2=0; j2 < i2 && count<limit ;j2++ ) {
+                    if (z1) pair[0] = looper[1]->data[j1];
+                    if (z2) pair[1] = looper[2]->data[j2];
+                    fs_ptree_it *it = fs_ptree_search(pt, pk, pair);
+                    while (it && fs_ptree_it_next(it, pair) && count<limit) {
+                        fs_rid quad_s = by_subject ? pk : pair[1];
+                        fs_rid quad_o = by_subject ? pair[1] : pk;
+                        fs_rid quad[4] = {pair[0],quad_s,pred,quad_o};
+                        if (!bind_same(quad, tobind)) continue;
+                        if (!graph_ok(quad, tobind)) continue;
+                        count++;
+                        bind_results(quad, tobind, ret);
+                    }
+                    fs_ptree_it_free(it);
+               }
+               }
+           }
+       }
+   }
+    if (looper) 
+        free(looper);
 
     TIME("bind");
 
