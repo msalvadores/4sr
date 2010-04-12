@@ -1,6 +1,11 @@
 include ../discovery.mk
 include ../rev.mk
 include ../darwin.mk
+include ../reasoner.mk
+
+ifdef reasoner
+    reasoner_flag = -DUSE_REASONER
+endif
 
 DEFINES := $(shell pkg-config rasqal --atleast-version=0.9.14 && echo "-DHAVE_LAQRS") $(shell pkg-config rasqal --atleast-version=0.9.16 && echo "-DHAVE_RASQAL_WORLD")
 BINS = 4s-httpd
@@ -8,7 +13,7 @@ BINS = 4s-httpd
 FRONTEND = ../frontend/query-cache.o ../frontend/query-datatypes.o ../frontend/query-data.o ../frontend/query.o ../frontend/optimiser.o ../frontend/order.o ../frontend/filter.o ../frontend/filter-datatypes.o ../frontend/decimal.o ../frontend/results.o ../frontend/import.o ../frontend/update.o
 
 # PROFILE = -pg
-CFLAGS = -std=gnu99 -Wall $(PROFILE) -g -O2 -I./ -I../ $(DEFINES) -DGIT_REV=\"$(gitrev)\" `pkg-config --cflags rasqal raptor glib-2.0 libxml-2.0 gthread-2.0`
+CFLAGS = -std=gnu99 -Wall $(PROFILE) -g -O2 -I./ -I../ $(DEFINES) -DGIT_REV=\"$(gitrev)\" $(reasoner_flag) `pkg-config --cflags rasqal raptor glib-2.0 libxml-2.0 gthread-2.0`
 LDFLAGS = $(ldfdarwin) $(ldflinux) $(PROFILE) `pkg-config --libs rasqal raptor glib-2.0 libxml-2.0 gthread-2.0 $(avahi)`
 
 all: $(BINS) $(test_BINS)

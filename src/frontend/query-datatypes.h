@@ -1,6 +1,12 @@
 #ifndef QUERY_DATATYPES_H
 #define QUERY_DATATYPES_H
 
+#if defined(USE_REASONER)
+#ifndef REASONER_BIND_OP
+#define REASONER_BIND_OP          0x800
+#endif
+#endif
+
 #include <rasqal.h>
 
 #include "common/params.h"

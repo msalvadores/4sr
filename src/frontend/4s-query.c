@@ -44,8 +44,18 @@
 #include "common/hash.h"
 #include "common/error.h"
 
-static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_levelo, int result_flags, int soft_limit);
-static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit);
+static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_levelo, int result_flags, int soft_limit
+    #if defined(USE_REASONER)
+    ,int no_reasoner);
+    #else
+    );
+    #endif
+static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit
+    #if defined(USE_REASONER)
+    ,int no_reasoner);
+    #else
+    );
+    #endif
 
 static int show_timing;
 
@@ -62,7 +72,12 @@ int main(int argc, char *argv[])
 {
     char *password = fsp_argv_password(&argc, argv);
 
+    #if defined(USE_REASONER)  
+    static char *optstring = "hvf:PO:Ib:rs:dn";
+    int no_reasoner = 0;
+    #else
     static char *optstring = "hvf:PO:Ib:rs:d";
+    #endif
     char *format = getenv("FORMAT");
     char *kb_name = NULL, *query = NULL;
     int programatic = 0, help = 0;
@@ -86,6 +101,9 @@ int main(int argc, char *argv[])
         { "soft-limit", 1, 0, 's' },
         { "default-graph", 0, 0, 'd' },
         { "base", 1, 0, 'b' },
+        #if defined(USE_REASONER)  
+        { "no-reasoner", 0, 0, 'n' },
+        #endif
         { 0, 0, 0, 0 }
     };
 
@@ -110,6 +128,10 @@ int main(int argc, char *argv[])
             default_graph = 1;
         } else if (c == 'b') {
             base_uri = optarg;
+        #if defined(USE_REASONER)  
+        } else if (c == 'n') {
+            no_reasoner = 1;
+        #endif
         } else {
             help = 1;
         }
@@ -141,6 +163,9 @@ int main(int argc, char *argv[])
       fprintf(stderr, " -r, --restricted  Enable query complexity restriction\n");
       fprintf(stderr, " -s, --soft-limit  Override default soft limit on search breadth\n");
       fprintf(stderr, " -d, --default-graph  Enable SPARQL default graph support\n");
+    #if defined(USE_REASONER)  
+      fprintf(stderr, " -n, --no-reasoner  disables the RDFS reasoner\n");
+    #endif
       fprintf(stderr, " -b, --base      Set base URI for query\n");
       return 1;
     }
@@ -195,17 +220,32 @@ int main(int argc, char *argv[])
 
     if (programatic) {
 	programatic_io(link, bu, "sparql", format, timing, verbosity, opt_level,
-            FS_RESULT_FLAG_HEADERS | flags, soft_limit);
+            FS_RESULT_FLAG_HEADERS | flags, soft_limit
+    #if defined(USE_REASONER)
+    ,no_reasoner);
+    #else
+    );
+    #endif
     } else if (!query) {
         if (!format) format = "text";
         interactive(link, bu, format, verbosity, opt_level,
-            insert_mode ? FS_RESULT_FLAG_CONSTRUCT_AS_INSERT : flags, soft_limit);
+            insert_mode ? FS_RESULT_FLAG_CONSTRUCT_AS_INSERT : flags, soft_limit
+    #if defined(USE_REASONER)
+    ,no_reasoner);
+    #else
+    );
+    #endif
     }
 
     int ret = 0;
 
     fs_query_state *qs = fs_query_init(link);
-    fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit);
+    fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit
+    #if defined(USE_REASONER)
+    ,no_reasoner);
+    #else
+    );
+    #endif
     if (fs_query_errors(qr)) {
         ret = 1;
     }
@@ -247,7 +287,12 @@ int main(int argc, char *argv[])
 
 #define MAX_Q_SIZE 1000000
 
-static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit)
+static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit
+#if defined(USE_REASONER)  
+,int no_reasoning)
+#else
+)
+#endif
 {
     char query[MAX_Q_SIZE];
     char *pos;
@@ -273,7 +318,12 @@ static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lan
                 printf("Q: %s\n", query);
             }
 	    fs_query *tq = fs_query_execute(qs, link, bu, query,
-		    result_flags, opt_level, soft_limit);
+		    result_flags, opt_level, soft_limit
+#if defined(USE_REASONER)  
+,no_reasoning);
+#else
+);
+#endif
 	    fs_query_results_output(tq, result_format, 0, stdout);
             if (show_timing) {
                 printf("# time: %f s\n", fs_time() - fs_query_start_time(tq));
@@ -353,7 +403,12 @@ static void save_history_dotfile(void)
     g_free(dotfile);
 }
 
-static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_level, int result_flags, int soft_limit)
+static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_level, int result_flags, int soft_limit
+#if defined(USE_REASONER)  
+,int no_reasoning)
+#else
+)
+#endif
 {
     char *query = NULL;
 
@@ -394,7 +449,12 @@ static void interactive(fsp_link *link, raptor_uri *bu, const char *result_forma
 	/* process query string */
 	if (query && strcmp(query, "#EOQ")) {
 	    fs_query *tq = fs_query_execute(qs, link, bu, query,
-		    result_flags, opt_level, soft_limit);
+		    result_flags, opt_level, soft_limit
+#if defined(USE_REASONER)  
+,no_reasoning);
+#else
+);
+#endif
 	    fs_query_results_output(tq, result_format, 0, stdout);
 	    fs_query_free(tq);
 	    if (result_format && !strcmp(result_format, "sparql")) {

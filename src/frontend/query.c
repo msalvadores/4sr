@@ -315,7 +315,7 @@ printf("Merge B%d to B%d\n", block, parent);
     }
 }
 
-fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, const char *query, int flags, int opt_level, int soft_limit)
+fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, const char *query, int flags, int opt_level, int soft_limit,int no_reasoning)
 {
     if (!qs) {
         fs_error(LOG_CRIT, "fs_query_execute() handed NULL query state");
@@ -524,7 +524,11 @@ fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, c
     if (q->construct || q->describe || rasqal_query_get_distinct(rq)) {
 	q->flags |= FS_BIND_DISTINCT;
     }
-
+#if defined(USE_REASONER)
+    if (no_reasoning) {
+        q->flags |= REASONER_BIND_OP;
+    }
+#endif
     graph_pattern_walk(link, pattern, q, NULL, 0, 0);
 
     tree_compact(q);

@@ -50,6 +50,11 @@
 
 /* file globals */
 
+#if defined(USE_REASONER)
+static char *gbl_kb_name = NULL;
+static char *gbl_password = NULL;
+#endif
+
 static raptor_uri *bu;
 static fsp_link *fsplink;
 static int has_o_index = 0;
@@ -309,9 +314,19 @@ static void http_close(client_ctxt *ctxt)
 static void http_query_worker(gpointer data, gpointer user_data)
 {
   client_ctxt *ctxt = (client_ctxt *) data;
+  
+  #if defined(USE_REASONER)
+  int optlevel = ctxt->no_reasoning ? 3 : 0;
+  #else
+  int optlevel = 3;
+  #endif
 
-  ctxt->qr = fs_query_execute(query_state, fsplink, bu, ctxt->query_string, ctxt->query_flags, 3 /* opt_level */, ctxt->soft_limit);
-
+  ctxt->qr = fs_query_execute(query_state, fsplink, bu, ctxt->query_string, ctxt->query_flags, optlevel, ctxt->soft_limit
+  #if defined(USE_REASONER)  
+  ,ctxt->no_reasoning);
+  #else
+  ); //FIXME this is not nice
+  #endif
   http_send(ctxt, "HTTP/1.0 200 OK\r\n");
   http_send(ctxt, "Server: 4s-httpd/" GIT_REV "\r\n");
   const char *accept = g_hash_table_lookup(ctxt->headers, "accept");
@@ -530,6 +545,15 @@ static void http_put_finished(client_ctxt *ctxt, const char *msg)
   g_free(ctxt->import_uri);
   ctxt->import_uri = NULL;
 
+  #if defined(USE_REASONER)
+  //FIXME this is a workaround to allow 4s-reasoner get updated the rdfs triples, otherwise deadlock
+  fs_error(LOG_INFO, "giving entrace to reasoner (1 second free locks)");
+  fsp_close_link(fsplink);
+  sleep(2);
+  fsplink = fsp_open_link(gbl_kb_name, gbl_password, FS_OPEN_HINT_RW);
+  fs_error(LOG_INFO, "link reaopen");
+  #endif
+
   http_import_queue_remove(ctxt);
 
   if (msg) {
@@ -608,6 +632,14 @@ static void http_delete_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
     fs_query_cache_flush(query_state, 0);
     fs_error(LOG_INFO, "deleted model <%s>", url);
     http_error(ctxt, "200 deleted successfully");
+    #if defined(USE_REASONER)
+    //FIXME this is a workaround to allow 4s-reasoner get updated the rdfs triples, otherwise deadlock
+    fs_error(LOG_INFO, "giving entrace to reasoner (1 second free locks)");
+    fsp_close_link(fsplink);
+    sleep(2);
+    fsplink = fsp_open_link(gbl_kb_name, gbl_password, FS_OPEN_HINT_RW);
+    fs_error(LOG_INFO, "link reaopen");
+    #endif
   }
   fs_rid_vector_free(mvec);
 
@@ -805,7 +837,6 @@ static void http_query_widget(client_ctxt *ctxt)
 static void http_get_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
 {
   char *default_graph = NULL; /* ignored for now */
-
   char *qm = strchr(url, '?');
   char *qs = qm ? qm + 1 : NULL;
   if (qs) {
@@ -843,6 +874,11 @@ static void http_get_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         url_decode(value);
         default_graph = value;
       }
+      #if defined(USE_REASONER)
+      else if (!strcmp(key, "no-reasoner")) {
+        ctxt->no_reasoning = 1;
+      }
+      #endif
       qs = next;
     }
     if (query) {
@@ -901,7 +937,6 @@ static void http_head_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
 static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
 {
   char *default_graph = NULL; /* ignored for now */
-
   url_decode(url);
   if (!strcmp(url, "/sparql/")) {
     char *form_type = just_content_type(ctxt);
@@ -967,6 +1002,11 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         url_decode(value);
         default_graph = value;
       }
+      #if defined(USE_REASONER)
+      else if (!strcmp(key, "no-reasoner")) {
+         ctxt->no_reasoning = 1;
+      }
+      #endif
       qs = next;
     }
     if (query) {
@@ -1497,12 +1537,21 @@ static int server_setup (int background, const char *host, const char *port)
   } else {
     fs_error(LOG_INFO, "4store HTTP daemon " GIT_REV " started on port %s", port);
   }
+
+  #if defined(USE_REASONER)
+  fs_error(LOG_INFO, "[with reasoner]");
+  #endif
   return srv;
 }
 
 static void child (int srv, char *kb_name, char *password)
 {
   signal_actions_child();
+
+#if defined(USE_REASONER)
+  gbl_kb_name = kb_name;
+  gbl_password = password;
+#endif
 
   fsplink = fsp_open_link(kb_name, password, FS_OPEN_HINT_RW);
   if (!fsplink) {

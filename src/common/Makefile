@@ -1,6 +1,11 @@
 include ../discovery.mk
 include ../rev.mk
 include ../darwin.mk
+include ../reasoner.mk
+
+ifdef reasoner
+    reasoner_flag = -DUSE_REASONER
+endif
 
 LIB_OBJS = 4s-common.o 4s-client.o 4s-server.o 4s-mdns.o datatypes.o error.o umac.o rijndael-alg-fst.o md5.o hash.o
 
@@ -21,7 +26,7 @@ ifdef dnssd
   mdns_flags = -DUSE_DNS_SD
 endif
 
-CFLAGS = -std=gnu99 -fno-strict-aliasing -Wall -g -O2 -I../ -DGIT_REV=\"$(gitrev)\" $(mdns_flags) `pkg-config --cflags $(pkgs)`
+CFLAGS = -std=gnu99 -fno-strict-aliasing -Wall -g -O2 -I../ -DGIT_REV=\"$(gitrev)\" $(reasoner_flag) $(mdns_flags) `pkg-config --cflags $(pkgs)`
 LDFLAGS = $(ldfdarwin) $(lfdlinux)
 LIBS = `pkg-config --libs $(pkgs)`
 

@@ -37,6 +37,11 @@
 #include <netdb.h>
 #include <glib.h>
 
+
+#if defined(USE_REASONER)
+#include <arpa/inet.h>
+#endif
+
 static char *global_kb_name = NULL;
 static float global_disk_limit = 0.0f;
 
@@ -336,6 +341,12 @@ gboolean accept_fn (GIOChannel *source, GIOCondition condition, gpointer data)
   } else {
     /* child process */
     fs_backend *be = backend->open(global_kb_name, 0);
+
+    #if defined(USE_REASONER)
+    if (backend->reasoner)
+        set_reasoner(backend,be);
+    #endif
+
     if (be) {
       fs_backend_set_min_free(be, global_disk_limit);
       child(conn, backend, be);
@@ -348,7 +359,41 @@ gboolean accept_fn (GIOChannel *source, GIOCondition condition, gpointer data)
   return TRUE;
 }
 
+#if defined(USE_REASONER)
+
+reasoner_conf *new_reasoner_conf(char *host) {
+    char *ip,*port;
+    if (!strstr(host,":")) {
+        ip=host;
+        port="6789"; 
+    } else {
+        gchar **tokens = g_strsplit(host,":",-1);
+        gchar **ip_t=tokens+0;
+        gchar **port_t=tokens+1;
+        ip = *ip_t;
+        port = *port_t;
+        g_free(tokens);
+    }
+    if (!g_hostname_is_ip_address(ip)) {
+        struct hostent *he;
+        if ((he = gethostbyname(ip)) == NULL) {  // get the host info
+            fs_error(LOG_ERR,"Unable to get IP for reasoner %s - reasoner not attached !!!", ip);
+            return NULL;
+        }
+        ip = inet_ntoa(*(struct in_addr *)he->h_addr);
+        fs_error(LOG_ERR,"reasoner interface at %s",ip);
+    }
+    reasoner_conf *rs_conf = NULL;
+    rs_conf = calloc(1, sizeof(reasoner_conf));
+    rs_conf->port = atoi(port);
+    rs_conf->addr = ip;
+    return rs_conf;
+}
+
+void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float disk_limit, char *reasoner_service)
+#else
 void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float disk_limit)
+#endif 
 {
   struct addrinfo hints, *info;
   uint16_t port = FS_DEFAULT_PORT;
@@ -424,6 +469,14 @@ void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float dis
     kb_error(LOG_CRIT, "failed to open backend");
     return;
   }
+  #if defined(USE_REASONER)
+  if (reasoner_service) { 
+      backend->reasoner = new_reasoner_conf(reasoner_service);
+      fprintf(stderr, "Reasoner configured at %s\n",reasoner_service);  
+  }
+  else
+      fprintf(stderr, "No reasoner configured\n");  
+  #endif
 
   GMainLoop *loop = g_main_loop_new (NULL, FALSE);
   fsp_mdns_setup_backend (port, kb_name, backend->segment_count(be));

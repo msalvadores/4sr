@@ -36,6 +36,9 @@
 #include "backend-intl.h"
 #include "query-backend.h"
 
+#include "reasoner/4s-reasoner-backend.h"
+#include "reasoner/4s-reasoner-common.h"
+
 #define TMP_SIZE 512
 
 //#define DEBUG_BRANCH 1
@@ -200,7 +203,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
     const int mvl = fs_rid_vector_length(mv);
     const int svl = fs_rid_vector_length(sv);
-    const int pvl = fs_rid_vector_length(pv);
+    int pvl = fs_rid_vector_length(pv);
     const int ovl = fs_rid_vector_length(ov);
 
     /* if the query looks like (?m _ _ _) we can consult the model hash */
@@ -317,7 +320,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
     int nloops = -1;
     int by_subject = tobind & FS_BIND_BY_SUBJECT;
-
+    const int io = by_subject ? 2 : 0; //whereis ov
     fs_rid_vector **looper = NULL;
     if (by_subject && svl == 0) {
         nloops=1;
@@ -335,14 +338,44 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
     }
 
    int tree_object_flag = by_subject ? 0 : 1;
-   int pi = pvl ? pvl : be->ptree_length;
+   int i_ext=0;   
+   int reasoner_bind = (tobind & REASONER_BIND_OP);
+   int do_rdfs = !reasoner_bind && be->reasoner;
+    #ifdef DEBUG_RDFS
+    fs_error(LOG_ERR, "segment %i do_rdfs %i nloops %i reasoner_bind %i reasoner_conf %p",
+                       segment,do_rdfs,nloops,reasoner_bind,be->reasoner);
+    #endif
+   if (do_rdfs && pvl != 0) { //if predicates then extend the predicates with subProp closure
+        fs_rid_vector *extended_predicates = rdfs_subproperties_vector(be->reasoner,pv);
+        pv = extended_predicates;
+        #ifdef DEBUG_RDFS
+        fs_error(LOG_ERR, "segment %i rdfs predicates extended %i->%i",segment,pvl,fs_rid_vector_length(pv));
+        #endif
+        pvl = fs_rid_vector_length(pv);
+   }
+   const int pi = pvl ? pvl : be->ptree_length;
+   fs_rid_vector *extended_objects = NULL;
+
    for (int p=0; p<pi && count<limit; p++) {
        if (!pvl) fs_backend_ptree_limited_open(be,p);
        fs_ptree *pt = pvl ? fs_backend_get_ptree(be, pv->data[p], tree_object_flag) : 
        (tobind & FS_BIND_BY_SUBJECT ? be->ptrees_priv[p].ptree_s : be->ptrees_priv[p].ptree_o );
        fs_rid pred = pvl ? pv->data[p] : be->ptrees_priv[p].pred;
        if (!pt) continue; 
-
+       
+       if (do_rdfs && ovl != 0) {
+           if (pred == RDF_TYPE_RID || pred == RDFS_SUBCLASS_RID || pred == RDFS_SUBPROPERTY_RID) { 
+                if (!extended_objects) {
+                    extended_objects = rdfs_sub_classes_vector(be->reasoner,ov);
+                    #ifdef DEBUG_RDFS
+                    fs_error(LOG_ERR, "segment %i objects extended  %i->%i",segment,ovl,fs_rid_vector_length(extended_objects));
+                    #endif
+                }
+                looper[io] = extended_objects;
+           } else
+                looper[io] = ov;
+       }
+       
        if (nloops == 1) { //1 loop, always MV, always quad selector and never pair search
            fs_rid_vector *index=mv;
            int i0 = fs_rid_vector_length(index);
@@ -357,17 +390,27 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                 while (it && fs_ptree_traverse_next(it, quad) && count<limit) {
                     if (!bind_same(quad, tobind)) continue;
                     if (!graph_ok(quad, tobind)) continue;
+                    if (do_rdfs && 
+                       (((pred == RDF_TYPE_RID || pred == RDFS_SUBCLASS_RID || pred == RDFS_SUBPROPERTY_RID) && ovl == 0) 
+                          || pvl == 0) ) {
+                        i_ext = rdfs_extend_quads(be->reasoner,quad,ret,tobind,limit,&count);
+                        #ifdef DEBUG_RDFS
+                        fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
+                        #endif
+                    }
                     count++;
                     bind_results(quad, tobind, ret);
                 }
                 fs_ptree_it_free(it);
            }
        } else { //3 loops  always pair serch
+
            int i0 = fs_rid_vector_length(looper[0]);
            int z1 = fs_rid_vector_length(looper[1]);
            int i1 = z1 ? z1 : 1;
            int z2 = fs_rid_vector_length(looper[2]);
            int i2 = z2 ? z2 : 1;
+
            for (int j0=0; j0 < i0 && count<limit ;j0++ ) {
                fs_rid pk = looper[0]->data[j0];
                fs_rid pair[2] = { FS_RID_NULL, FS_RID_NULL };
@@ -375,6 +418,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                for (int j2=0; j2 < i2 && count<limit ;j2++ ) {
                     if (z1) pair[0] = looper[1]->data[j1];
                     if (z2) pair[1] = looper[2]->data[j2];
+
                     fs_ptree_it *it = fs_ptree_search(pt, pk, pair);
                     while (it && fs_ptree_it_next(it, pair) && count<limit) {
                         fs_rid quad_s = by_subject ? pk : pair[1];
@@ -382,6 +426,12 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                         fs_rid quad[4] = {pair[0],quad_s,pred,quad_o};
                         if (!bind_same(quad, tobind)) continue;
                         if (!graph_ok(quad, tobind)) continue;
+                        if (do_rdfs && ( ((pred == RDF_TYPE_RID || pred == RDFS_SUBCLASS_RID) && ovl == 0) || pvl == 0) ) {
+                            i_ext = rdfs_extend_quads(be->reasoner,quad,ret,tobind,limit,&count);
+                            #ifdef DEBUG_RDFS
+                            fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
+                            #endif
+                        }
                         count++;
                         bind_results(quad, tobind, ret);
                     }

@@ -19,6 +19,7 @@
 #define FS_BIND_UNION             0x400
 #define FS_BIND_REVERSE           #error feature removed
 
+
 #define FS_BIND_SAME_MASK        0xf000
 #define FS_BIND_SAME_XXXX        0x0000
 #define FS_BIND_SAME_XXAA        0x1000
@@ -47,6 +48,18 @@
 #define FS_QUERY_EXPLAIN     0x20000000
 #define FS_QUERY_COUNT       0x40000000
 #define FS_QUERY_DEFAULT_GRAPH 0x80000000
+
+#if defined(USE_REASONER)
+
+#define REASONER_BIND_OP          0x800
+
+typedef struct {
+    char *target_kb;
+    char *addr;
+    int port;
+} reasoner_conf;
+
+#endif 
 
 typedef unsigned long long int fs_rid;
 typedef uint32_t fs_segment;

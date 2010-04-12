@@ -2,6 +2,11 @@ include ../discovery.mk
 include ../rev.mk
 include ../darwin.mk
 include ../readedit.mk
+include ../reasoner.mk
+
+ifdef reasoner
+    reasoner_flag = -DUSE_REASONER
+endif
 
 DEFINES := $(shell pkg-config rasqal --atleast-version=0.9.14 && echo "-DHAVE_LAQRS") $(shell pkg-config rasqal --atleast-version=0.9.16 && echo "-DHAVE_RASQAL_WORLD")
 BINS = 4s-query 4s-import 4s-delete-model 4s-size 4s-info 4s-update
@@ -15,7 +20,7 @@ else
 endif
 
 # PROFILE = -pg
-CFLAGS = -std=gnu99 -fno-strict-aliasing -Wall $(PROFILE) -g -O2 -I./ -I../ $(DEFINES) $(readedit_cflags) -DGIT_REV=\"$(gitrev)\" `pkg-config --cflags rasqal raptor glib-2.0 libxml-2.0` `pcre-config --cflags`
+CFLAGS = -std=gnu99 -fno-strict-aliasing -Wall $(PROFILE) -g -O2 -I./ -I../ $(DEFINES) $(readedit_cflags) -DGIT_REV=\"$(gitrev)\" $(reasoner_flag) `pkg-config --cflags rasqal raptor glib-2.0 libxml-2.0` `pcre-config --cflags`
 LDFLAGS = $(ldfdarwin) $(ldflinux) $(PROFILE) `pkg-config --libs rasqal raptor glib-2.0 libxml-2.0 $(avahi)` `pcre-config --libs`
 
 all: $(BINS) $(test_BINS)

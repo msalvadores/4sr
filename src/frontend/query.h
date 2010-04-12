@@ -12,7 +12,13 @@ fs_query_state *fs_query_init(fsp_link *link);
 int fs_query_fini(fs_query_state *qs);
 
 fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu,
-                           const char *query, int flags, int opt_level, int soft_limit);
+                           const char *query, int flags, int opt_level, int soft_limit
+  #if defined(USE_REASONER)  
+  ,int reasoning);
+  #else
+  ); //FIXME this is not nice
+  #endif
+
 void fs_query_free(fs_query *q);
 double fs_query_start_time(fs_query *q);
 int fs_query_flags(fs_query *q);

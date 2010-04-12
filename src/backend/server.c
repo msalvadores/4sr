@@ -42,6 +42,14 @@
 
 #include "lock.h"
 
+#if defined(USE_REASONER)
+#include "reasoner/4s-reasoner-backend.h" 
+#include <arpa/inet.h>
+#ifndef HOST_NAME_MAX
+#define HOST_NAME_MAX _POSIX_HOST_NAME_MAX
+#endif
+#endif
+
 #define PAD " "
 
 //static const char feature_string[] = PAD "no-o-index freq" PAD;
@@ -233,6 +241,12 @@ static unsigned char * handle_delete_models (fs_backend *be, fs_segment segment,
 
   fs_delete_models(be, segment, &models);
 
+  #if defined(USE_REASONER)
+  if (be->reasoner) {
+  notify_import_finished(be->reasoner);
+  }
+  #endif
+
   return message_new(FS_DONE_OK, segment, 0);
 }
 
@@ -312,6 +326,12 @@ static unsigned char * handle_stop_import (fs_backend *be, fs_segment segment,
   if (ret) {
     return fsp_error_new(segment, "insert failed");
   }
+  
+  #if defined(USE_REASONER)
+  if (be->reasoner) {
+  notify_import_finished(be->reasoner);
+  }
+  #endif
 
   return message_new(FS_DONE_OK, segment, 0);
 }
@@ -1055,9 +1075,20 @@ int main (int argc, char *argv[])
   fsp_syslog_enable();
 
   int c, opt_index=0;
+  
+  #if defined(USE_REASONER)
+  static const char *optstr = "Dl:r:";
+  char *reasoner=NULL;
+  int reasoner_flag = 0;
+  #else
   static const char *optstr = "Dl:";
+  #endif
+
   static struct option longopt[] = {
     { "daemon", 0, 0, 'D' },
+    #if defined(USE_REASONER)
+    { "reasoner",optional_argument, 0, 'r' },
+    #endif
     { "limit", 1, 0, 'l' },
     { 0, 0, 0, 0 }
   };
@@ -1076,6 +1107,12 @@ int main (int argc, char *argv[])
     case 'l':
       disk_limit = atof(optarg);
       break;
+    #if defined(USE_REASONER)
+    case 'r':
+        reasoner_flag = 1;
+        reasoner = optarg;
+        break;
+    #endif
     default:
       help = 1;
       break;
@@ -1098,8 +1135,23 @@ int main (int argc, char *argv[])
   if (fs_lock_kb(kb_name)) {
     return 1;
   }
-
+  
+  #if defined(USE_REASONER)
+  if (reasoner_flag && !reasoner) {
+    char host_name[HOST_NAME_MAX + 1];
+    gethostname(host_name, HOST_NAME_MAX);
+    reasoner = host_name;
+  }
+  fsp_serve(kb_name, &native_backend, daemon, disk_limit,reasoner);
+  #else
   fsp_serve(kb_name, &native_backend, daemon, disk_limit);
+  #endif
 
   return 2; /* fsp_serve returns only if there is an error */
 }
+
+#if defined(USE_REASONER)
+void set_reasoner(fsp_backend *backend,fs_backend *be) {
+    be->reasoner = backend->reasoner;
+}
+#endif

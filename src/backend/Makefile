@@ -1,8 +1,14 @@
 include ../discovery.mk
 include ../rev.mk
 include ../darwin.mk
+include ../reasoner.mk
 
-CFLAGS = -Wall -g -std=gnu99 -O2 -I.. -DGIT_REV=\"$(gitrev)\" `pkg-config --cflags raptor glib-2.0`
+ifdef reasoner
+    reasoner_flag = -DUSE_REASONER
+    REASONING_OBJS = ../reasoner/4s-reasoner-common.o ../reasoner/4s-reasoner-backend.o
+endif
+
+CFLAGS = -Wall -g -std=gnu99 -O2 -I.. -DGIT_REV=\"$(gitrev)\" $(reasoner_flag) `pkg-config --cflags raptor glib-2.0`
 LDFLAGS = $(ldfdarwin) $(ldflinux) -lz `pkg-config --libs raptor glib-2.0 $(avahi)`
 
 LIB_OBJS = chain.o bucket.o list.o tlist.o rhash.o mhash.o sort.o \
@@ -54,5 +60,5 @@ ptreebind: ptreebind.o backend.o ../common/timing.o lib4storage.a ../common/lib4
 tbchaindump: tbchaindump.o backend.o ../common/timing.o lib4storage.a ../common/lib4store.a
 
 lib4storage.a: $(LIB_OBJS) $(HEADERS)
-	ar rvu lib4storage.a $(LIB_OBJS)
+	ar rvu lib4storage.a $(LIB_OBJS) $(REASONING_OBJS)
 	ranlib lib4storage.a

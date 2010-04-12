@@ -57,6 +57,9 @@ struct _fs_backend {
     long long approx_size; /* a value read from ptrees at startup, and updated
 			    * not guaranteed to be accurate */
     float min_free;
+    #if defined(USE_REASONER)
+    reasoner_conf *reasoner;
+    #endif
 };
 
 #endif

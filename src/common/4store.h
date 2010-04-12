@@ -262,10 +262,18 @@ typedef struct {
   fs_backend * (* open) (const char *kb_name, int flags);
   void (* close) (fs_backend *backend);
   int (* segment_count) (fs_backend *backend);
+  
+  #if defined(USE_REASONER)
+    reasoner_conf *reasoner;
+  #endif
 } fsp_backend;
 
+#if defined(USE_REASONER)
+void fsp_serve (const char *kb_name, fsp_backend *implementation, int daemon, float free_disk, char *reasoner_service);
+void set_reasoner(fsp_backend *backend,fs_backend *be);
+#else
 void fsp_serve (const char *kb_name, fsp_backend *implementation, int daemon, float free_disk);
-
+#endif
 const char *fsp_kb_name(fsp_link *link);
 
 int fsp_hit_limits(fsp_link *link);

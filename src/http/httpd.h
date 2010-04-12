@@ -18,5 +18,8 @@ typedef struct {
   guint watchdog;
   int soft_limit;
   char *output;
+  #if defined(USE_REASONER)  
+  int no_reasoning;
+  #endif
 } client_ctxt;
 
