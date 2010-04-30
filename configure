@@ -35,5 +35,6 @@ libtest "ncurses"
 libtest "readline" "-lncurses"
 libtest "z"
 pkg-config --exists avahi-glib avahi-client && pass "avahi installed" || ( test -e /usr/include/dns_sd.h && pass "dns_sd installed" || optfail "no mDNS library, will build without cluster support" )
+test -e ./src/reasoner && pass "reasoner support included" || fail "no reasoner support"
 
 rm -f /tmp/configure-$$.*
