@@ -1,0 +1,14 @@
+# parser warning: Variable g was selected but is unused in the query. at line 1
+?g	?s	?o
+NULL	<http://example.org/ns/p1>	<http://example.org/ns/c1>
+NULL	<http://example.org/ns/p1>	<http://example.org/ns/c2>
+NULL	<http://example.org/ns/p1>	<http://example.org/ns/c3>
+NULL	<http://example.org/ns/p1>	<http://example.org/ns/x>
+NULL	<http://example.org/ns/p2>	<http://example.org/ns/c1>
+NULL	<http://example.org/ns/p2>	<http://example.org/ns/c2>
+NULL	<http://example.org/ns/p2>	<http://example.org/ns/c3>
+NULL	<http://example.org/ns/p2>	<http://example.org/ns/x>
+NULL	<http://example.org/ns/p3>	<http://example.org/ns/c1>
+NULL	<http://example.org/ns/p3>	<http://example.org/ns/c2>
+NULL	<http://example.org/ns/p3>	<http://example.org/ns/c3>
+NULL	<http://example.org/ns/p3>	<http://example.org/ns/x>

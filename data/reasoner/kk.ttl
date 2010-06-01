@@ -1,0 +1,11 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@base <http://example.org/ns/> .
+
+<c2> rdfs:subClassOf <c1> .
+
+<s1> <p> <o1> .
+<o1> a <c2> .
+
+<s2> <p> <o2> .
+<o2> a <c2> .

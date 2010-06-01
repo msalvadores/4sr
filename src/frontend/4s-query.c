@@ -70,6 +70,8 @@ static double ftime()
 
 int main(int argc, char *argv[])
 {
+
+    //fprintf(stderr, "MDNS SERVICE_TYPE  %s\n", SERVICE_TYPE);
     char *password = fsp_argv_password(&argc, argv);
 
     #if defined(USE_REASONER)  
@@ -240,12 +242,16 @@ int main(int argc, char *argv[])
     int ret = 0;
 
     fs_query_state *qs = fs_query_init(link);
+    GTimer* tquery = g_timer_new ();
     fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit
     #if defined(USE_REASONER)
     ,no_reasoner);
     #else
     );
     #endif
+    gulong microseconds = 0;
+    gdouble qtime = g_timer_elapsed(tquery,&microseconds);
+    //printf("query time %.5f \n",qtime);
     if (fs_query_errors(qr)) {
         ret = 1;
     }

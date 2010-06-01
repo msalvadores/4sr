@@ -49,7 +49,14 @@ fs_rid_vector **rdfs_subclass_stmts(fsp_link *link) {
 	return get_stmts_by_predicate(link,RDFS_SUBCLASS_RID);
 }
 
-
 fs_rid_vector **rdfs_subproperty_stmts(fsp_link *link) {
 	return get_stmts_by_predicate(link,RDFS_SUBPROPERTY_RID);
+}
+
+fs_rid_vector **rdfs_range_stmts(fsp_link *link) {
+	return get_stmts_by_predicate(link,RDFS_RANGE_RID);
+}
+
+fs_rid_vector **rdfs_domain_stmts(fsp_link *link) {
+	return get_stmts_by_predicate(link,RDFS_DOMAIN_RID);
 }

@@ -1,0 +1,5 @@
+#!
+
+$TESTPATH/frontend/4s-query -s -1 -O0 $1 'SELECT * WHERE { graph <http://4sreasoner.ecs.soton.ac.uk/entailedgraph/> { <http://example.org/ns/o2> ?p ?t } }' | sort 
+
+

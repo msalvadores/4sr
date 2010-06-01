@@ -1,0 +1,56 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix def: <http://foo.com/def/> .
+@prefix id: <http://foo.com/id/> .
+
+
+def:carModel rdfs:subPropertyOf rdfs:label .
+def:vanModel rdfs:subPropertyOf rdfs:label .
+def:vanSchoolModel rdfs:subPropertyOf def:vanModel .
+
+def:Color rdfs:subPropertyOf def:VehicleFeature;
+rdfs:range def:ThingWithColor .
+
+def:EngineSizeClass rdfs:subClassOf def:FeatureOfAnEngine .
+
+def:EngineFeature rdfs:subPropertyOf def:VehicleFeature;
+rdfs:domain def:VehicleWithEngine;
+rdfs:range def:FeatureOfAnEngine .
+
+def:SizeEngine rdfs:subPropertyOf def:EngineFeature;
+rdfs:domain def:Vehicle;
+rdfs:range def:EngineSizeClass .
+
+def:TypeEngine rdfs:subPropertyOf def:EngineFeature .
+
+def:Diesel def:eco def:medium .
+def:Unleaded def:eco def:extra .
+
+def:Vehicle rdfs:label "Vehicle" .
+
+def:Car rdfs:subClassOf def:Vehicle;
+    rdfs:label "Car" .
+
+def:Van rdfs:subClassOf def:Vehicle;
+    rdfs:label "Van" .
+
+def:SchoolVan rdfs:subClassOf def:Van;
+    rdfs:label "School Van" .
+
+id:inst1 a def:Car;
+    def:carModel "Ford X";
+    def:Color def:Green;
+    def:TypeEngine def:Unleaded;
+    def:SizeEngine def:TwoLiters .
+
+id:inst2 a def:Van;
+    def:vanModel "Volkswagen Y";
+    def:Color def:Blue;
+    def:TypeEngine def:Diesel;
+    def:SizeEngine def:ThreeLiters .
+
+id:inst3 a def:SchoolVan;
+    def:vanSchoolModel "Whatever Z";
+    def:Color def:Blue;
+    def:TypeEngine def:Diesel;
+    def:SizeEngine def:ThreeLiters .
+

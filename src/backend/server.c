@@ -1067,6 +1067,8 @@ fsp_backend native_backend = {
 
 int main (int argc, char *argv[])
 {
+  
+  fprintf(stderr, "MDNS SERVICE_TYPE  %s\n", SERVICE_TYPE);
   char *kb_name;
   int daemon = 1;
   int help = 0;

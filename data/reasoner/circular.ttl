@@ -1,0 +1,42 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@base <http://example.org/ns/> .
+
+<c1> rdfs:subClassOf <c2> .
+<c2> rdfs:subClassOf <c3> .
+<c3> rdfs:subClassOf <c1> .
+
+<c4> rdfs:subClassOf <c4> .
+
+<p1> rdfs:subPropertyOf <p2>;
+    rdfs:domain <c1>;
+    rdfs:range <c2>;
+.
+<p2> rdfs:subPropertyOf <p3>;
+    rdfs:domain <c2>;
+    rdfs:range <c3>;
+.
+<p3> rdfs:subPropertyOf <p1>;
+    rdfs:domain <c3>;
+    rdfs:domain <y>;
+    rdfs:range <c1>;
+    rdfs:range <x>;
+.
+
+<p4> rdfs:subPropertyOf <p4> .
+
+<a> a <c1>;
+    <p1> <o1>;
+.
+<b> a <c2>;
+    <p2> <o2>;
+.
+<c> a <c3>;
+    <p3> <o3>;
+.
+<d> a <c4>;
+    <p4> <o4>;
+.
+<d> a <c4>;
+    <p4> <o4>;
+.

@@ -68,7 +68,7 @@ int fs_bind_cache_wrapper(fs_query_state *qs, fs_query *q, int all,
 
     /* check for no possible bindings */
     for (int s=0; s<4; s++) {
-        if (rids[s]->length == 1 && rids[s]->data[0] == FS_RID_NULL) {
+        if (rids[s]->length == 1 && rids[s]->data[0] == FS_RID_NULL) { //ms8: this means the slot is open to be bind
             *result = calloc(slots, sizeof(fs_rid_vector));
             for (int s=0; s<slots; s++) {
                 (*result)[s] = fs_rid_vector_new(0);
@@ -132,11 +132,18 @@ int fs_bind_cache_wrapper(fs_query_state *qs, fs_query *q, int all,
     skip_cache:;
 
     int limited_before = fsp_hit_limits(q->link);
+
+    #if defined(USE_REASONER)
+    ret = fsp_bind_limit_all(q->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit);
+    #else
     if (all) {
         ret = fsp_bind_limit_all(q->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit);
     } else {
         ret = fsp_bind_limit_many(q->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit);
     }
+    #endif
+    
+
     int limited = fsp_hit_limits(q->link) - limited_before;
     if (ret) {
         fs_error(LOG_ERR, "bind failed in '%s', %d segments gave errors",

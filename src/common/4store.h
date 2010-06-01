@@ -9,6 +9,8 @@
 #include "datatypes.h"
 #include "backend/backend.h"
 
+#define SERVICE_TYPE "_4srcluster._tcp"
+
 /* message types */
 /* use a #define because these are part of the on-the-wire protocol
    and thus cannot be changed */

@@ -1,0 +1,5 @@
+#!
+
+$TESTPATH/frontend/4s-query -s -1 -O0 $1 'SELECT ?g ?s ?o  WHERE { graph ?g { ?s <http://www.w3.org/2000/01/rdf-schema#domain> ?o } } ORDER BY ?s' | sort 
+
+

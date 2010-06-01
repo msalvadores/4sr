@@ -1,0 +1,17 @@
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p1>	<http://example.org/ns/c1>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p1>	<http://example.org/ns/c2>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p1>	<http://example.org/ns/c3>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p1>	<http://example.org/ns/y>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p2>	<http://example.org/ns/c1>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p2>	<http://example.org/ns/c2>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p2>	<http://example.org/ns/c3>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p2>	<http://example.org/ns/y>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p3>	<http://example.org/ns/c1>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p3>	<http://example.org/ns/c2>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p3>	<http://example.org/ns/c3>
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/p3>	<http://example.org/ns/y>
+<http://example.org/ns/circular.ttl>	<http://example.org/ns/p1>	<http://example.org/ns/c1>
+<http://example.org/ns/circular.ttl>	<http://example.org/ns/p2>	<http://example.org/ns/c2>
+<http://example.org/ns/circular.ttl>	<http://example.org/ns/p3>	<http://example.org/ns/c3>
+<http://example.org/ns/circular.ttl>	<http://example.org/ns/p3>	<http://example.org/ns/y>
+?g	?s	?o

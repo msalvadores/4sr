@@ -1,0 +1,19 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix def: <http://foo.com/def/> .
+@prefix id: <http://foo.com/id/> .
+
+def:busModel rdfs:subPropertyOf rdfs:label .
+
+def:Places rdfs:subPropertyOf def:VehicleFeature .
+
+
+def:Bus rdfs:subClassOf def:Vehicle;
+    rdfs:label "Bus" .
+
+id:inst4 a def:Bus;
+    def:busModel "Ford X";
+    def:Color def:Red;
+    def:TypeEngine def:Unleaded;
+    def:Places "40";
+    def:SizeEngine def:EightLiters .
+

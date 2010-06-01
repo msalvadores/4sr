@@ -55,30 +55,25 @@ char foo;
 read(0, &foo, 1);
 #endif
 
+    //FIXME memory leak when warming up free the old binds and messages
     fsp_link *link = open_kb_link(gbl_kb_name,gbl_password);
-    if (0 && cache->subClassOf_bind) {
-        fs_rid_vector_free(cache->subClassOf_bind[0]);
-        fs_rid_vector_free(cache->subClassOf_bind[1]);
-        free(cache->subClassOf_bind);
-    }
-    if (0 && cache->subClassOf_msg)
-        free(cache->subClassOf_msg);
+
     cache->subClassOf_bind = rdfs_subclass_stmts(link);
     cache->subClassOf_msg = mtrx_to_msg(RS_GBL_SUBCLASS_RESP,cache->subClassOf_bind,2); 
-    if (0 && cache->subProperty_bind) {
-        fs_rid_vector_free(cache->subProperty_bind[0]);
-        fs_rid_vector_free(cache->subProperty_bind[1]);
-        free(cache->subProperty_bind);
-    }
-    if (0 && cache->subProperty_msg)
-        free(cache->subProperty_msg);
+
     cache->subProperty_bind = rdfs_subproperty_stmts(link);
     cache->subProperty_msg = mtrx_to_msg(RS_GBL_SUBPROPERTY_RESP,cache->subProperty_bind,2); 
+
+    cache->range_bind = rdfs_range_stmts(link);
+    cache->range_msg = mtrx_to_msg(RS_GBL_RANGE_RESP,cache->range_bind,2); 
+
+    cache->domain_bind = rdfs_domain_stmts(link);
+    cache->domain_msg = mtrx_to_msg(RS_GBL_RANGE_RESP,cache->domain_bind,2); 
+    
     fsp_close_link(link);
-    #ifdef DEBUG_RDFS
-    fprintf(stderr,"cache warmed up [%i subClassOf(s)][%i subPropertyOf(s)] \n",
-    cache->subClassOf_bind[0]->length,cache->subProperty_bind[0]->length);
-    #endif 
+    fprintf(stderr,"cache warmed up [%i subClassOf(s)][%i subPropertyOf(s)][%i domain(s)][%i range(s)] \n",
+    cache->subClassOf_bind[0]->length,cache->subProperty_bind[0]->length,
+    cache->domain_bind[0]->length,cache->range_bind[0]->length);
 }
 
 void process_request(int conn, reasoner_cache *cache) {
@@ -86,14 +81,20 @@ void process_request(int conn, reasoner_cache *cache) {
     unsigned char *msg = reasoner_recv(conn, &length);
     unsigned char * const type = (unsigned char *) (msg + 3);
     int count;
-    if (RS_GBL_SUBCLASS == *type || RS_GBL_SUBPROPERTY == *type) {
-        unsigned char * out = RS_GBL_SUBCLASS == *type ? 
-                                        cache->subClassOf_msg : cache->subProperty_msg;
+    if (RS_GBL_SUBCLASS == *type || RS_GBL_SUBPROPERTY == *type ||
+        RS_GBL_RANGE == *type || RS_GBL_DOMAIN == *type ) {
+        unsigned char * out = NULL;
+        if (RS_GBL_SUBCLASS == *type)
+            out = cache->subClassOf_msg;
+        else if (RS_GBL_SUBPROPERTY == *type)
+            out = cache->subProperty_msg;
+        else if (RS_GBL_RANGE == *type)
+            out = cache->range_msg;
+        else
+            out = cache->domain_msg;
 
         unsigned int * const l = (unsigned int *) (out + 4);
         count = write(conn, out,(*l)+FS_HEADER);
-        //fs_rid_vector **result2 = msg_to_mtrx(out);
-        //print_binding(result2,2);
     } else if (RS_NOTIFY_IMPORT == *type) {
         unsigned char *reply = message_new(FS_DONE_OK, 0, 0);
         count = write(conn, reply,FS_HEADER);

@@ -43,6 +43,9 @@
 
 //#define DEBUG_BRANCH 1
 
+GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges);
+void fs_quad_print_resolved(fs_backend *be, fs_rid *quad, int flags, FILE *out);
+
 static int slot_bits[4] = {
     FS_BIND_MODEL,
     FS_BIND_SUBJECT,
@@ -140,6 +143,11 @@ static int bind_same(const fs_rid ref[4], int flags)
     return match;
 }
 
+int pred_is_rdfs(fs_rid pred) {
+    return pred == RDF_TYPE_RID || pred == RDFS_SUBCLASS_RID || pred == RDFS_SUBPROPERTY_RID ||
+           pred == RDFS_DOMAIN_RID || pred == RDFS_RANGE_RID;
+}
+
 static void bind_results(const fs_rid quad[4], int tobind, fs_rid_vector **ret)
 {
     int col=0;
@@ -172,6 +180,9 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
 	return NULL;
     }
+
+    int reasoner_bind = (tobind & REASONER_BIND_OP);
+    int do_rdfs = !reasoner_bind && be->reasoner;
     double then = fs_time();
 
     limit = (limit == -1) ? INT_MAX : limit;
@@ -202,6 +213,14 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
     }
 
     const int mvl = fs_rid_vector_length(mv);
+    //if (mvl > 0 && !fs_rid_vector_contains(mv,ENTAIL_GRAPH)) {
+    if (mvl > 0 && !fs_rid_vector_contains(mv,ENTAIL_GRAPH) && !(tobind & FS_BIND_MODEL)) {
+        do_rdfs= 0;
+        #ifdef DEBUG_RDFS
+        fs_error(LOG_ERR, "segment %i do_rdfs=0 mvl>0 and ENTAIL_GRAPH not in mv",segment);
+        fs_error(LOG_ERR, "model graph ====> %llx",mv->data[0]);
+        #endif
+    }
     const int svl = fs_rid_vector_length(sv);
     int pvl = fs_rid_vector_length(pv);
     const int ovl = fs_rid_vector_length(ov);
@@ -272,6 +291,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
     /* if the query looks like (m ?s/_ ?p/_ ?o/_) we can consult the model
      * index */
+    if (!do_rdfs || !fs_rid_vector_contains(mv,ENTAIL_GRAPH)) {
     if (mvl > 0 && svl == 0 && pvl == 0 && ovl == 0) {
 	for (int i=0; i<mvl; i++) {
 	    const fs_rid model = mv->data[i];
@@ -317,6 +337,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
 	return ret;
     }
+    }
 
     int nloops = -1;
     int by_subject = tobind & FS_BIND_BY_SUBJECT;
@@ -339,43 +360,80 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
    int tree_object_flag = by_subject ? 0 : 1;
    int i_ext=0;   
-   int reasoner_bind = (tobind & REASONER_BIND_OP);
-   int do_rdfs = !reasoner_bind && be->reasoner;
     #ifdef DEBUG_RDFS
     fs_error(LOG_ERR, "segment %i do_rdfs %i nloops %i reasoner_bind %i reasoner_conf %p",
                        segment,do_rdfs,nloops,reasoner_bind,be->reasoner);
+    fprintf(stderr,"mv:");
+    fs_rid_vector_print_resolved(be,mv,0,stdout);  
+    fprintf(stderr,"sv:");
+    fs_rid_vector_print_resolved(be,sv,0,stdout);  
+    fprintf(stderr,"pv:");
+    fs_rid_vector_print_resolved(be,pv,0,stdout);  
+    fprintf(stderr,"ov:");
+    fs_rid_vector_print_resolved(be,ov,0,stdout);  
     #endif
+   fs_rid_vector *pre_preds = NULL;
    if (do_rdfs && pvl != 0) { //if predicates then extend the predicates with subProp closure
         fs_rid_vector *extended_predicates = rdfs_subproperties_vector(be->reasoner,pv);
+        pre_preds = pv;
         pv = extended_predicates;
         #ifdef DEBUG_RDFS
         fs_error(LOG_ERR, "segment %i rdfs predicates extended %i->%i",segment,pvl,fs_rid_vector_length(pv));
+        fs_rid_vector_print_resolved(be,pv,0,stdout);  
         #endif
         pvl = fs_rid_vector_length(pv);
    }
    const int pi = pvl ? pvl : be->ptree_length;
    fs_rid_vector *extended_objects = NULL;
+   fs_rid_vector *pre_objects = NULL;
+
+
+   int do_rd = 1;
+   GHashTable* preds_by_sub = NULL;
+
+   int domain_done = 0;
+   GList *entailments = NULL;
 
    for (int p=0; p<pi && count<limit; p++) {
        if (!pvl) fs_backend_ptree_limited_open(be,p);
        fs_ptree *pt = pvl ? fs_backend_get_ptree(be, pv->data[p], tree_object_flag) : 
        (tobind & FS_BIND_BY_SUBJECT ? be->ptrees_priv[p].ptree_s : be->ptrees_priv[p].ptree_o );
        fs_rid pred = pvl ? pv->data[p] : be->ptrees_priv[p].pred;
+
        if (!pt) continue; 
        
+       if (do_rdfs && do_rd && !domain_done) { //rdf:type domain should be inferred only once.
+            if (pred == RDF_TYPE_RID || !pvl) { // if no P then we have to run it either way to expand ?p
+            domain_done = 1;
+            if (preds_by_sub==NULL)
+                preds_by_sub = get_subject_pred(be,get_rdfs_domains(be->reasoner),get_rdfs_ranges(be->reasoner));
+            if (preds_by_sub) {
+                i_ext = rdfs_extend_quads_domain(be->reasoner,preds_by_sub,
+                                                svl ? sv : NULL,ovl ? ov : NULL,&entailments,tobind,&count);
+                #ifdef DEBUG_RDFS
+                    fs_error(LOG_ERR, "segment %i rdfs domain %i triples ",segment,i_ext);
+                #endif
+            }
+            }
+       }
+
        if (do_rdfs && ovl != 0) {
-           if (pred == RDF_TYPE_RID || pred == RDFS_SUBCLASS_RID || pred == RDFS_SUBPROPERTY_RID) { 
+           if (pred_is_rdfs(pred)) { 
                 if (!extended_objects) {
                     extended_objects = rdfs_sub_classes_vector(be->reasoner,ov);
+                    pre_objects = ov;
                     #ifdef DEBUG_RDFS
-                    fs_error(LOG_ERR, "segment %i objects extended  %i->%i",segment,ovl,fs_rid_vector_length(extended_objects));
+                    fs_error(LOG_ERR, "segment %i objects extended  %i->%i",
+                                segment,ovl,fs_rid_vector_length(extended_objects));
                     #endif
                 }
                 looper[io] = extended_objects;
+                //fs_rid_vector_print_resolved(be,looper[io],0,stdout);  
            } else
                 looper[io] = ov;
        }
        
+       int entail_graph_request=0;
        if (nloops == 1) { //1 loop, always MV, always quad selector and never pair search
            fs_rid_vector *index=mv;
            int i0 = fs_rid_vector_length(index);
@@ -386,39 +444,53 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                                    pred , 
                                    FS_RID_NULL };
                 fs_rid mrid = mvl ? index->data[j0] : FS_RID_NULL;
+                entail_graph_request = mrid == ENTAIL_GRAPH ? 1 : 0;
+                if (entail_graph_request)
+                    mrid = FS_RID_NULL;
                 fs_ptree_it *it = fs_ptree_traverse(pt, mrid);
                 while (it && fs_ptree_traverse_next(it, quad) && count<limit) {
                     if (!bind_same(quad, tobind)) continue;
                     if (!graph_ok(quad, tobind)) continue;
-                    if (do_rdfs && 
-                       (((pred == RDF_TYPE_RID || pred == RDFS_SUBCLASS_RID || pred == RDFS_SUBPROPERTY_RID) && ovl == 0) 
-                          || pvl == 0) ) {
-                        i_ext = rdfs_extend_quads(be->reasoner,quad,ret,tobind,limit,&count);
+                    if (do_rdfs && ( 
+                         (pred_is_rdfs(pred) && ovl == 0) || pvl == 0) ) {
+                        i_ext = rdfs_extend_quads(be->reasoner,quad,&entailments,tobind,limit,&count);
                         #ifdef DEBUG_RDFS
                         fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
                         #endif
                     }
-                    count++;
-                    bind_results(quad, tobind, ret);
+                    //fs_quad_print_resolved(be,quad,0,stderr);
+                    if ((pre_preds && !fs_rid_vector_contains(pre_preds,quad[2])) ||
+                        (pre_objects && !fs_rid_vector_contains(pre_objects,quad[3]))) { 
+                            quad[0]=ENTAIL_GRAPH;
+                            fs_rid *cpy_quad = get_new_quad_for(quad[0],quad[1],quad[2],quad[3]);
+                            if (controlled_append(&entailments,cpy_quad)) {
+                                count++;
+                             }
+                    }
+                    else if (!entail_graph_request) {
+                        count++;
+                        bind_results(quad, tobind, ret);
+                    }
+
                 }
                 fs_ptree_it_free(it);
            }
        } else { //3 loops  always pair serch
 
            int i0 = fs_rid_vector_length(looper[0]);
-           int z1 = fs_rid_vector_length(looper[1]);
+           int z1 = fs_rid_vector_length(looper[1]); //looper 1 is MV always
            int i1 = z1 ? z1 : 1;
            int z2 = fs_rid_vector_length(looper[2]);
            int i2 = z2 ? z2 : 1;
 
            for (int j0=0; j0 < i0 && count<limit ;j0++ ) {
                fs_rid pk = looper[0]->data[j0];
-               fs_rid pair[2] = { FS_RID_NULL, FS_RID_NULL };
                for (int j1=0; j1 < i1 && count<limit ;j1++ ) {
                for (int j2=0; j2 < i2 && count<limit ;j2++ ) {
+                    fs_rid pair[2] = { FS_RID_NULL, FS_RID_NULL };
                     if (z1) pair[0] = looper[1]->data[j1];
                     if (z2) pair[1] = looper[2]->data[j2];
-
+                    entail_graph_request = pair[0] == ENTAIL_GRAPH ? 1 : 0;
                     fs_ptree_it *it = fs_ptree_search(pt, pk, pair);
                     while (it && fs_ptree_it_next(it, pair) && count<limit) {
                         fs_rid quad_s = by_subject ? pk : pair[1];
@@ -426,14 +498,27 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                         fs_rid quad[4] = {pair[0],quad_s,pred,quad_o};
                         if (!bind_same(quad, tobind)) continue;
                         if (!graph_ok(quad, tobind)) continue;
-                        if (do_rdfs && ( ((pred == RDF_TYPE_RID || pred == RDFS_SUBCLASS_RID) && ovl == 0) || pvl == 0) ) {
-                            i_ext = rdfs_extend_quads(be->reasoner,quad,ret,tobind,limit,&count);
+                        if (do_rdfs && ( ( pred_is_rdfs(pred) && ovl == 0) || pvl == 0) ) {
+                            i_ext = rdfs_extend_quads(be->reasoner,quad,&entailments,tobind,limit,&count);
                             #ifdef DEBUG_RDFS
                             fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
                             #endif
                         }
-                        count++;
-                        bind_results(quad, tobind, ret);
+                        //fs_quad_print_resolved(be,quad,0,stderr);
+                        if ((pre_preds && !fs_rid_vector_contains(pre_preds,quad[2])) ||
+                            (pre_objects && !fs_rid_vector_contains(pre_objects,quad[3]))) { 
+                                quad[0]=ENTAIL_GRAPH;
+                                fs_rid *cpy_quad = get_new_quad_for(quad[0],quad[1],quad[2],quad[3]);
+                                if (controlled_append(&entailments,cpy_quad)) {
+                                    count++;
+                                 }
+                        }
+                        else if (!entail_graph_request) {
+                            count++;
+                            bind_results(quad, tobind, ret);
+                        }
+
+
                     }
                     fs_ptree_it_free(it);
                }
@@ -441,8 +526,24 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
            }
        }
    }
-    if (looper) 
-        free(looper);
+   #ifdef DEBUG_RDFS
+   fs_error(LOG_ERR, "segment-->%i count-->%i entailments-->%i",segment,count, g_list_length(entailments));
+   #endif
+   while(entailments) {
+        fs_rid *q = (fs_rid *) entailments->data;
+        #ifdef DEBUG_RDFS
+        fs_error(LOG_ERR, "adding entailment %llx %llx %llx %llx",q[0],q[1],q[2],q[3]);
+        #endif
+        if (!bind_same(q, tobind)) continue;
+        if (!graph_ok(q, tobind)) continue;
+        bind_results(q, tobind, ret);
+        entailments=g_list_next(entailments);
+   }
+   if (entailments) 
+       g_list_free(entailments);
+
+   if (looper)
+       free(looper);
 
     TIME("bind");
 
@@ -456,7 +557,12 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
          * conditions */
 	return NULL;
     }
-
+    #if 0
+    for (int z=0;z<cols;z++) {
+        fprintf(stderr,"col(%i):",z);
+        fs_rid_vector_print_resolved(be,ret[z],0,stdout);  
+    }
+    #endif
     return ret;
 }
 
@@ -469,6 +575,7 @@ fs_rid_vector **fs_reverse_bind(fs_backend *be, fs_segment segment,
 			       fs_rid_vector *pv, fs_rid_vector *ov,
                                int offset, int limit)
 {
+
     if (!(tobind & (FS_BIND_BY_SUBJECT | FS_BIND_BY_OBJECT))) {
 	fs_error(LOG_ERR, "tried to reverse_bind without s/o spec");
 
@@ -763,6 +870,23 @@ int fs_resolve_rid(fs_backend *be, fs_segment segment, fs_rid rid, fs_resource *
     return fs_rhash_get(be->res, out);
 }
 
+void fs_quad_print_resolved(fs_backend *be, fs_rid *quad, int flags, FILE *out) {
+	fs_resource res[4];
+    for(int q=0;q<4;q++) {
+        fs_resolve_rid(be, quad[q] & 0x7, quad[q], &res[q]);
+        if (FS_IS_BNODE(quad[q])) {
+            fprintf(out, "<%s> ", res[q].lex);
+        } else if (FS_IS_URI(quad[q])) {
+            fprintf(out, "<%s> ",res[q].lex);
+        } else if (FS_IS_LITERAL(quad[q])) {
+            fprintf(out, "\"%s\"",res[q].lex);
+        } else {
+            fprintf(out, "%4d %llx ?%s?\n",q,quad[q], res[q].lex);
+        }
+    }
+    fprintf(out, "\n");
+}
+
 void fs_rid_vector_print_resolved(fs_backend *be, fs_rid_vector *v, int flags, FILE *out)
 {
     if (!v) {
@@ -813,6 +937,60 @@ fs_data_size fs_get_data_size(fs_backend *be, int seg)
     ret.models_o = -1;
 
     return ret;
+}
+
+GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges) {
+       #ifdef DEBUG_RDFS
+       fs_error(LOG_ERR, "get_subject_predi domains [%i] ranges [%i] ",g_list_length(g_hash_table_get_keys(domains)),
+       g_list_length(g_hash_table_get_keys(ranges)));
+       #endif
+       GHashTable* lookup = g_hash_table_new( (GHashFunc) fs_rid_hash, (GEqualFunc) fs_rid_equal);
+       GList *list = g_hash_table_get_keys(domains);
+       fs_rid_set *dom_preds = NULL;
+       fs_rid pred;
+       while(list) {
+           pred = *((fs_rid *) list->data);
+           fs_ptree *pt = fs_backend_get_ptree(be, pred, 0);
+           if (pt) {
+                fs_ptree_it *it = fs_ptree_traverse(pt, FS_RID_NULL);
+                dom_preds = g_hash_table_lookup(domains,&pred);
+                if (dom_preds) {
+                    fs_rid quad[4] = { FS_RID_NULL, 
+                                   FS_RID_NULL,
+                                   pred, 
+                                   FS_RID_NULL };
+                    while (it && fs_ptree_traverse_next(it, quad)) {
+                        add_elto_set(lookup,&quad[1],dom_preds);
+                    }
+                }
+           }
+           list = g_list_next(list);
+       }
+
+
+       list = g_hash_table_get_keys(ranges);
+       fs_rid_set *ranges_pred = NULL;
+       while(list) {
+           pred = *((fs_rid *) list->data);
+           fs_ptree *pt = fs_backend_get_ptree(be, pred, 1);
+           if (pt) {
+                fs_ptree_it *it = fs_ptree_traverse(pt, FS_RID_NULL);
+                ranges_pred = g_hash_table_lookup(ranges,&pred);
+                if (ranges_pred) {
+                    fs_rid quad[4] = { FS_RID_NULL, 
+                                   FS_RID_NULL,
+                                   pred, 
+                                   FS_RID_NULL };
+                    while (it && fs_ptree_traverse_next(it, quad)) {
+                        add_elto_set(lookup,&quad[1],ranges_pred);
+                    }
+                }
+           }
+           list = g_list_next(list);
+       }
+       //fs_error(LOG_ERR,"subjects type inferred table");
+       //dumpTable(lookup);
+       return lookup;
 }
 
 /* vi:set ts=8 sts=4 sw=4: */

@@ -36,6 +36,9 @@
 #include "common/params.h"
 #include "common/hash.h"
 #include "common/error.h"
+#if defined(USE_REASONER)
+#include "reasoner/4s-reasoner-common.h"
+#endif
 
 #define FS_RHASH_DEFAULT_LENGTH        65536
 #define FS_RHASH_DEFAULT_SEARCH_DIST      32
@@ -702,7 +705,14 @@ static int fs_rhash_get_intl(fs_rhash *rh, fs_resource *res)
             return get_entry(rh, &buffer[k], res);
         }
     }
-
+    #if defined(USE_REASONER)
+    if (res->rid == ENTAIL_GRAPH) {
+        //fs_error(LOG_WARNING, "(1) ENTAIL_GRAPH TO RESOLVE FOUND %llxi %i",res->rid,rh->search_dist);
+        res->lex = "http://4sreasoner.ecs.soton.ac.uk/entailedgraph/";
+        res->attr = 0;
+        return 0;
+    }
+    #endif
     fs_error(LOG_WARNING, "resource %016llx not found in § 0x%x-0x%x of %s", res->rid, entry, entry + rh->search_dist - 1, rh->filename);
     res->lex = g_strdup_printf("¡resource %llx not found!", res->rid);
     res->attr = 0;
