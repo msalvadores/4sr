@@ -41,7 +41,7 @@
 
 #define TMP_SIZE 512
 
-//#define DEBUG_BRANCH 1
+/* #define DEBUG_BRANCH 1 */
 
 GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges);
 void fs_quad_print_resolved(fs_backend *be, fs_rid *quad, int flags, FILE *out);

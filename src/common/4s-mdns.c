@@ -26,7 +26,6 @@
 #include <unistd.h>
 #include <glib.h>
 
-#define SERVICE_TYPE "_4store._tcp"
 
 #if defined(USE_AVAHI)
 
@@ -161,6 +160,8 @@ static void browse_callback (AvahiServiceBrowser *browser,
 
 void fsp_mdns_setup_frontend (fsp_link *link)
 {
+  //fprintf(stderr, "MDNS SERVICE_TYPE  %s\n", SERVICE_TYPE);
+
   int avahi_error;
 
   spoll = avahi_simple_poll_new();
