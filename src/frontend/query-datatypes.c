@@ -925,7 +925,6 @@ if (fp < 20) {
      }
     /* ms8: END code to clean up rows that where not replaced */
 
-
 #ifdef DEBUG_MERGE
     printf("result: %d bindings\n", fs_binding_length(to));
     fs_binding_print(to, stdout);

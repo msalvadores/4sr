@@ -71,6 +71,8 @@
 #define FS_QUAD_FREQ 0x30
 #define FS_CHOOSE_SEGMENT 0x31
 
+#define FS_DELETE_QUADS 0x32
+
 /* message header  = 16 bytes */
 #define FS_HEADER 16
 
@@ -143,6 +145,7 @@ int fsp_start_import_all (fsp_link *link);
 int fsp_stop_import_all (fsp_link *link);
 int fsp_delete_model_all (fsp_link *link, fs_rid_vector *models);
 int fsp_new_model_all (fsp_link *link, fs_rid_vector *models);
+int fsp_delete_quads_all (fsp_link *link, fs_rid_vector *vec[4]);
 
 int fsp_bind_limit_many (fsp_link *link,
                          int flags,
@@ -226,6 +229,7 @@ typedef struct {
   fsp_backend_fn insert_resource;
   fsp_backend_fn insert_triple; /* deprecated */
   fsp_backend_fn delete_models;
+  fsp_backend_fn delete_quads;
   fsp_backend_fn new_models;
 
   fsp_backend_fn segments; /* deprecated */

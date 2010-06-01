@@ -694,7 +694,10 @@ static int apply_constraints(fs_query *q, int row)
 	    printf("\n");
 #endif
 	    if (v.valid & fs_valid_bit(FS_V_TYPE_ERROR) && v.lex) {
-		q->warnings = g_slist_prepend(q->warnings, v.lex);
+                /* only add a warning if it's not already in there */
+                if (!q->warnings || !g_slist_find(q->warnings, v.lex)) {
+		    q->warnings = g_slist_prepend(q->warnings, v.lex);
+                }
 	    }
 	    fs_value result = fn_ebv(v);
 	    if (result.valid & fs_valid_bit(FS_V_TYPE_ERROR) || !result.in) {
@@ -1415,59 +1418,68 @@ static void output_json(fs_query *q, int flags, FILE *out)
     }
     fprintf(out, "]},\n");
 
-    fprintf(out, " \"results\": {\n");
-    fprintf(out, "  \"bindings\":[");
-    fs_row *row;
-    int rownum = 0;
-    while ((row = fs_query_fetch_row(q))) {
-        if (rownum++ > 0) {
-            fprintf(out, ",\n");
+    if (q->ask) {
+        while (q->boolean && fs_query_fetch_row(q));
+        if (q->boolean) {
+            fprintf(out, "\"boolean\": true");
         } else {
-            fprintf(out, "\n");
+            fprintf(out, "\"boolean\": false");
         }
-        fprintf(out, "   {");
-        for (int c=0; c<cols; c++) {
-            if (c) fputs(",\n    ", out);
-            fprintf(out, "\"%s\":{", header[c].name);
-            int esclen = 0;
-            char *escd = NULL;
-            const char *lex = row[c].lex;
-            switch (row[c].type) {
-                case FS_TYPE_NONE:
-                    break;
-                case FS_TYPE_URI:
-                    if (json_needs_escape(row[c].lex, &esclen)) {
-                        escd = json_escape(row[c].lex, esclen);
-                        lex = escd;
-                    }
-                    fprintf(out, "\"type\":\"uri\",\"value\":\"%s\"", lex);
-                    if (escd) free(escd);
-                    break;
-                case FS_TYPE_LITERAL:
-                    if (json_needs_escape(row[c].lex, &esclen)) {
-                        escd = json_escape(row[c].lex, esclen);
-                        lex = escd;
-                    }
-                    if (row[c].lang) {
-                        fprintf(out, "\"type\":\"literal\",\"value\":\"%s\",\"xml:lang\":\"%s\"", lex, row[c].lang);
-                    } else if (row[c].dt) {
-                        fprintf(out, "\"type\":\"literal\",\"value\":\"%s\",\"datatype\":\"%s\"", lex, row[c].dt);
-                    } else {
-                        fprintf(out, "\"type\":\"literal\",\"value\":\"%s\"", lex);
-                    }
-                    if (escd) free(escd);
-                    break;
-                case FS_TYPE_BNODE:
-                    fprintf(out, "\"type\":\"bnode\",\"value\":\"%s\"", row[c].lex + 2);
+    } else {
+        fprintf(out, " \"results\": {\n");
+        fprintf(out, "  \"bindings\":[");
+        fs_row *row;
+        int rownum = 0;
+        while ((row = fs_query_fetch_row(q))) {
+            if (rownum++ > 0) {
+                fprintf(out, ",\n");
+            } else {
+                fprintf(out, "\n");
+            }
+            fprintf(out, "   {");
+            for (int c=0; c<cols; c++) {
+                if (c) fputs(",\n    ", out);
+                fprintf(out, "\"%s\":{", header[c].name);
+                int esclen = 0;
+                char *escd = NULL;
+                const char *lex = row[c].lex;
+                switch (row[c].type) {
+                    case FS_TYPE_NONE:
+                        break;
+                    case FS_TYPE_URI:
+                        if (json_needs_escape(row[c].lex, &esclen)) {
+                            escd = json_escape(row[c].lex, esclen);
+                            lex = escd;
+                        }
+                        fprintf(out, "\"type\":\"uri\",\"value\":\"%s\"", lex);
+                        if (escd) free(escd);
+                        break;
+                    case FS_TYPE_LITERAL:
+                        if (json_needs_escape(row[c].lex, &esclen)) {
+                            escd = json_escape(row[c].lex, esclen);
+                            lex = escd;
+                        }
+                        if (row[c].lang) {
+                            fprintf(out, "\"type\":\"literal\",\"value\":\"%s\",\"xml:lang\":\"%s\"", lex, row[c].lang);
+                        } else if (row[c].dt) {
+                            fprintf(out, "\"type\":\"literal\",\"value\":\"%s\",\"datatype\":\"%s\"", lex, row[c].dt);
+                        } else {
+                            fprintf(out, "\"type\":\"literal\",\"value\":\"%s\"", lex);
+                        }
+                        if (escd) free(escd);
+                        break;
+                    case FS_TYPE_BNODE:
+                        fprintf(out, "\"type\":\"bnode\",\"value\":\"%s\"", row[c].lex + 2);
+                }
+                fputs("}", out);
             }
             fputs("}", out);
         }
-        fputs("}", out);
+        if (rownum) {
+            fputs("\n  ", out);
+        }
+        fprintf(out, "]\n }");
     }
-    if (rownum) {
-        fputs("\n  ", out);
-    }
-    fprintf(out, "]\n }");
 
     if (q->warnings) {
         fprintf(out, ",\n \"warnings\": [");
