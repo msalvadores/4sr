@@ -36,6 +36,7 @@ static char * gbl_kb_name = NULL;
 static char * gbl_password = NULL;
 
 pthread_mutex_t cntr_warmup = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t cntr_quad_assign = PTHREAD_MUTEX_INITIALIZER;
 
 fsp_link *open_kb_link(char *kbname,char *password) {
     fprintf(stderr,"opening %s\n",kbname);
@@ -45,6 +46,42 @@ fsp_link *open_kb_link(char *kbname,char *password) {
         exit(2);
     }
     return link;
+}
+
+
+gboolean quad_equal(const fs_rid *qA,const fs_rid *qB) {
+    return (qA[1] == qB[1]) && (qA[2] == qB[2]) && (qA[3] == qB[3]);
+}
+
+//guint quad_hash(const fs_rid **quad) {
+//    return *quad;
+//}
+
+unsigned char *process_quad_assignment(unsigned char *msg, unsigned int length) {
+    unsigned char *data = msg + FS_HEADER;
+    unsigned int * const s = (unsigned int *) (msg + 8);
+    int segment = *s;
+    //fs_error(LOG_ERR,"INIT process_quad_assignment segment ---> %i",segment);
+    GList *quad_list = NULL;
+    unsigned int nquads = length / 24;
+    for (int i= 0;i < nquads; i++) {
+        fs_rid *quad = calloc(4, sizeof(fs_rid));
+        memcpy(quad, data, 24);
+        gchar *key = calloc(50 , sizeof(char));
+        g_sprintf(key,"%llx_%llx_%llx",quad[0],quad[1],quad[2]);
+        //fs_error(LOG_ERR,"key %s",key);
+        gpointer assign = g_hash_table_lookup(gbl_cache->quad_assignment,key);
+        if (!assign) {
+            g_hash_table_insert(gbl_cache->quad_assignment,key,GINT_TO_POINTER(segment)); 
+            quad_list=g_list_append(quad_list,GINT_TO_POINTER(i));
+        } else if (GPOINTER_TO_INT(assign) == segment){
+            quad_list=g_list_append(quad_list,GINT_TO_POINTER(i));
+        }
+        data += 24;
+    }
+    unsigned char *out = list_integer_msg(RS_QUAD_ASSIGN_RESP,quad_list);
+    //fs_error(LOG_ERR,"END process_quad_assignment segment ---> %i",segment);
+    return out;
 }
 
 void warmup(reasoner_cache *cache) {
@@ -90,9 +127,10 @@ void process_request(int conn, reasoner_cache *cache) {
             out = cache->subProperty_msg;
         else if (RS_GBL_RANGE == *type)
             out = cache->range_msg;
-        else
+        else if (RS_GBL_DOMAIN)
             out = cache->domain_msg;
-
+        else
+            fs_error(LOG_ERR,"Uncontrolled message in 4s-reasoner");
         unsigned int * const l = (unsigned int *) (out + 4);
         count = write(conn, out,(*l)+FS_HEADER);
     } else if (RS_NOTIFY_IMPORT == *type) {
@@ -108,6 +146,18 @@ void process_request(int conn, reasoner_cache *cache) {
             warmup(gbl_cache);
             pthread_mutex_unlock(&cntr_warmup);
         }
+    } else if (RS_QUAD_ASSIGN == *type) {
+        int mut_ret = pthread_mutex_lock(&cntr_quad_assign);
+        if (mut_ret == EINVAL) {
+            fs_error(LOG_ERR,"error taking mutex");
+        } else {
+            unsigned char *out = process_quad_assignment(msg,length); 
+            unsigned int * const l = (unsigned int *) (out + 4);
+            count = write(conn, out,(*l)+FS_HEADER);
+            pthread_mutex_unlock(&cntr_quad_assign);
+            if (out)
+                free(out);
+         }
     } else {
         fs_error(LOG_ERR, "Unknown type message %c", *type);
     }
@@ -241,6 +291,7 @@ int main(int argc, char **argv){
 	gbl_password = fsp_argv_password(&argc, argv);
 
     gbl_cache = calloc(sizeof(reasoner_cache),1);
+    gbl_cache->quad_assignment = g_hash_table_new( (GHashFunc) g_str_hash , (GEqualFunc) quad_equal );
     warmup(gbl_cache);
     cache_loaded = 1;
     uint16_t port = port_arg;

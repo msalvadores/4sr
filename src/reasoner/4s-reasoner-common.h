@@ -16,6 +16,9 @@
 #define RS_NOTIFY_IMPORT 0x59
 #define RS_NOTIFY_IMPORT_RESP 0x5A
 
+#define RS_QUAD_ASSIGN 0x5B
+#define RS_QUAD_ASSIGN_RESP 0x5C
+
 #define TRAVERSE_UP 0
 #define TRAVERSE_DOWN 1
 
@@ -30,8 +33,10 @@
 
 #define ENTAIL_GRAPH 0xFB3D08630A37C1BA //<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>
 
-//#define DEBUG_RDFS 1
+//define DEBUG_RDFS 1
 
 unsigned char * mtrx_to_msg(int type,fs_rid_vector **mtx,int cols);
 fs_rid_vector **msg_to_mtrx(unsigned char *msg);
 unsigned char *reasoner_recv(int conn,unsigned int* bytes_read);
+unsigned char * list_integer_msg(int type,GList *list);
+

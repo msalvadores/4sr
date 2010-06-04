@@ -19,11 +19,13 @@
 
 fs_rid_vector *get_tree_closure(fs_rid *node,GHashTable* nodes, fs_rid_vector *partial);
 void loadRDFSTrees(reasoner_conf *reasoner);
+unsigned int send_message(int sckt_cl, char *addr, int port, unsigned char *msg, int len);
 
 static GHashTable* subClassOf_node = NULL;
 static GHashTable* subPropertyOf_node = NULL;
 static GHashTable* range_node = NULL;
 static GHashTable* domain_node = NULL;
+
 //static unsigned char fsp_vermagic[4] = { 'I', 'D', FS_PROTO_VER_MINOR, 0x0 };
 
 GHashTable *get_rdfs_domains(reasoner_conf *reasoner) {
@@ -71,13 +73,61 @@ void add_1elto_set(GHashTable* lookup,fs_rid *rid,fs_rid *elto) {
     fs_rid_set_add(s,*elto);
 }
 
-unsigned char * request_msg(int type) {
-	size_t data_length = 0;
+GList *get_assignment_list(unsigned char *mess,GList *origin) {
+    unsigned char *data = mess + FS_HEADER;
+    unsigned int * const l = (unsigned int *) (mess + 4);
+    int elements = *l / sizeof(int);
+    GList *ret=NULL;
+    int *elto = NULL;
+    for(int i=0;i<elements;i++) {
+        elto = calloc(1,sizeof(int));
+        memcpy(elto,data,sizeof(int));
+        data += sizeof(int);
+        GList *e = g_list_nth(origin,*elto);
+        fs_rid *q = e->data;
+        ret=g_list_append(ret,q);
+    }
+    return ret;
+}
+
+unsigned char * request_msg(int type, size_t data_length) {
 	unsigned char *buffer = calloc(1, FS_HEADER + data_length);
 	unsigned int * const l = (unsigned int *) (buffer + 4);
 	*l = (unsigned int) data_length;
 	buffer[3] = (unsigned char) type;
 	return buffer;
+}
+
+GList *get_equads_assignment(fs_segment segment,GList *entailments,reasoner_conf *reasoner) {
+    size_t data_length = g_list_length(entailments) * 24;
+    unsigned char *buffer = request_msg(RS_QUAD_ASSIGN,data_length); 
+    unsigned int * const s = (unsigned int *) (buffer + 8);
+    *s = segment;
+    unsigned char *data = buffer + FS_HEADER;
+    GList *tmp = entailments;
+    while(tmp) {
+        memcpy(data, tmp->data+8, 24);//+8 to skip q[0] and add q[1,2,3]
+        data += 24;
+        tmp=g_list_next(tmp); 
+    }
+    int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    unsigned int count = send_message(sckt_cl,reasoner->addr,reasoner->port,buffer,FS_HEADER + data_length);
+    if (count == 0) {
+        fs_error(LOG_ERR,"assign message no bytes written on send to %s:%i",
+            reasoner->addr,reasoner->port);
+        return NULL;
+    }        
+    unsigned char *resp = reasoner_recv(sckt_cl, &count);
+    if (!resp) {
+        fs_error(LOG_ERR,"no resp to assign, this potentially provokes duplicates");
+    }
+    GList *assign = get_assignment_list(resp,entailments);
+    if (resp)
+        free(resp);
+    if (buffer)
+        free(buffer);
+    g_list_free(entailments);
+    return assign;
 }
 
 
@@ -122,12 +172,12 @@ unsigned char * send_receive(unsigned char *msg,size_t len,const char *addr,int 
     return resp;
 }
 
-unsigned int send_message(int sckt_cl,char *addr,int port,unsigned char *msg) {
+unsigned int send_message(int sckt_cl,char *addr,int port,unsigned char *msg, int len) {
     struct sockaddr_in st_sckt_addr;
     int res;
     unsigned int count;
     if (-1 == sckt_cl) {
-        fs_error(LOG_ERR,"Error creating client soccket");
+        fs_error(LOG_ERR,"Error creating client socket");
         return 0;
     }
     memset(&st_sckt_addr, 0, sizeof(struct sockaddr_in));
@@ -153,15 +203,15 @@ unsigned int send_message(int sckt_cl,char *addr,int port,unsigned char *msg) {
       return 0;
     }
 
-    count = write(sckt_cl, msg, FS_HEADER);
+    count = write(sckt_cl, msg, len);
     return count;
 }
 
 
 void notify_import_finished(reasoner_conf *reasoner) {
-    unsigned char *req = request_msg(RS_NOTIFY_IMPORT);
+    unsigned char *req = request_msg(RS_NOTIFY_IMPORT,0);
     int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    unsigned int count = send_message(sckt_cl,reasoner->addr,reasoner->port,req);
+    unsigned int count = send_message(sckt_cl,reasoner->addr,reasoner->port,req,FS_HEADER);
     if (count == 0)
         fs_error(LOG_ERR,"import notification no bytes written on send to %s:%i",reasoner->addr,reasoner->port);
     unsigned char *resp = reasoner_recv(sckt_cl, &count);
@@ -220,9 +270,9 @@ GHashTable* edges_to_table(fs_rid_vector **edges) {
 }
 
 GHashTable* get_rdfs_data(char *addr,int port,int type) {
-    unsigned char *req = request_msg(type);
+    unsigned char *req = request_msg(type,0);
     int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    unsigned int count = send_message(sckt_cl,addr,port,req);
+    unsigned int count = send_message(sckt_cl,addr,port,req,FS_HEADER);
     if (count == 0) {
         fs_error(LOG_ERR,"no bytes written on send type %i to  %s:%i",type,addr,port);
         return NULL;
@@ -462,7 +512,7 @@ int rdfs_extend_quads(reasoner_conf *reasoner,const fs_rid source_quad[],GList *
             fs_rid *cpy_quad = get_new_quad_for(ENTAIL_GRAPH,source_quad[1],source_quad[2],source_quad[3]);
             cpy_quad[iindex] = closure->data[k];
             if (controlled_append(entailments,cpy_quad)) {
-            *count = *count + 1;
+   
             added_quads++;
             if (!(limit > *count))
                 return added_quads;

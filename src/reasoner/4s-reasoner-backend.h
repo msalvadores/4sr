@@ -18,3 +18,4 @@ gboolean fs_rid_equal(fs_rid *v1,fs_rid *v2);
 guint fs_rid_hash(fs_rid *v);
 int controlled_append(GList **list,fs_rid *quad);
 fs_rid *get_new_quad_for(fs_rid m,fs_rid s,fs_rid p,fs_rid o);
+GList *get_equads_assignment(fs_segment segment,GList *entailments,reasoner_conf *reasoner);

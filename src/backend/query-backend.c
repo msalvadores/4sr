@@ -529,6 +529,9 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
    #ifdef DEBUG_RDFS
    fs_error(LOG_ERR, "segment-->%i count-->%i entailments-->%i",segment,count, g_list_length(entailments));
    #endif
+   if (do_rdfs && g_list_length(entailments) > 0) {
+        entailments = get_equads_assignment(segment,entailments,be->reasoner);
+   }
    while(entailments) {
         fs_rid *q = (fs_rid *) entailments->data;
         #ifdef DEBUG_RDFS
@@ -541,10 +544,8 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
    }
    if (entailments) 
        g_list_free(entailments);
-
    if (looper)
        free(looper);
-
     TIME("bind");
 
     be->out_time[segment].bind_count++;
@@ -966,8 +967,6 @@ GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *rang
            }
            list = g_list_next(list);
        }
-
-
        list = g_hash_table_get_keys(ranges);
        fs_rid_set *ranges_pred = NULL;
        while(list) {

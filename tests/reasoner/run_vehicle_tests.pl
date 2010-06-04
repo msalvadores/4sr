@@ -39,7 +39,7 @@ my $fails = 0;
 my $passes = 0;
 for $t (@tests) {
     chomp $t;
-    if (index($t, "vehicles") < 0) {
+    if (index($t, "vehicle") < 0) {
         next;
     }
     if (!stat("exemplar/$t") && $test) {

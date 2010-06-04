@@ -46,6 +46,27 @@ unsigned char *reasoner_recv(int conn,unsigned int* bytes_read) {
     return buffer;
 }
 
+unsigned char * list_integer_msg(int type,GList *list) {
+    guint nlist = g_list_length(list);
+	size_t data_length = nlist * sizeof(int);
+	unsigned char *buffer = calloc(1, FS_HEADER + data_length);
+	unsigned int * const l = (unsigned int *) (buffer + 4);
+	*l = (unsigned int) data_length;
+	//printf("[mtrx2msg] data_length %i\n",*l);
+	buffer[3] = (unsigned char) type;
+	unsigned char *data = buffer + FS_HEADER;
+    GList *tmp=list;
+    int *elt=NULL;
+    while(tmp) {
+      elt = calloc(1,sizeof(int));
+      *elt = GPOINTER_TO_INT(tmp->data);
+	  memcpy(data, elt, sizeof(int));
+      data += sizeof(int);
+      tmp=g_list_next(tmp);
+    }
+	return buffer;
+}
+
 unsigned char * mtrx_to_msg(int type,fs_rid_vector **mtx,int cols) {
 	if (mtx == NULL)
 		return NULL;
@@ -53,10 +74,8 @@ unsigned char * mtrx_to_msg(int type,fs_rid_vector **mtx,int cols) {
 	unsigned char *buffer = calloc(1, FS_HEADER + data_length);
 	unsigned int * const c = (unsigned int *) (buffer + 8);
 	unsigned int * const l = (unsigned int *) (buffer + 4);
-	//FS_HEADER contains the length and cols of the message
 	*c = (int) cols;
 	*l = (unsigned int) data_length;
-	//printf("[mtrx2msg] data_length %i\n",*l);
 	buffer[3] = (unsigned char) type;
 	unsigned char *data = buffer + FS_HEADER;
 	int k;	

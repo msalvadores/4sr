@@ -10,6 +10,8 @@ typedef struct {
     unsigned char *range_msg;
     fs_rid_vector **domain_bind;
     unsigned char *domain_msg;
+
+    GHashTable *quad_assignment;
 } reasoner_cache;
 
 fs_rid_vector **rdfs_subclass_stmts(fsp_link *link);
