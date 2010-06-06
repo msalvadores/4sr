@@ -53,15 +53,11 @@ gboolean quad_equal(const fs_rid *qA,const fs_rid *qB) {
     return (qA[1] == qB[1]) && (qA[2] == qB[2]) && (qA[3] == qB[3]);
 }
 
-//guint quad_hash(const fs_rid **quad) {
-//    return *quad;
-//}
 
 unsigned char *process_quad_assignment(unsigned char *msg, unsigned int length) {
     unsigned char *data = msg + FS_HEADER;
     unsigned int * const s = (unsigned int *) (msg + 8);
     int segment = *s;
-    //fs_error(LOG_ERR,"INIT process_quad_assignment segment ---> %i",segment);
     GList *quad_list = NULL;
     unsigned int nquads = length / 24;
     for (int i= 0;i < nquads; i++) {
@@ -69,7 +65,6 @@ unsigned char *process_quad_assignment(unsigned char *msg, unsigned int length) 
         memcpy(quad, data, 24);
         gchar *key = calloc(50 , sizeof(char));
         g_sprintf(key,"%llx_%llx_%llx",quad[0],quad[1],quad[2]);
-        //fs_error(LOG_ERR,"key %s",key);
         gpointer assign = g_hash_table_lookup(gbl_cache->quad_assignment,key);
         if (!assign) {
             g_hash_table_insert(gbl_cache->quad_assignment,key,GINT_TO_POINTER(segment)); 
@@ -80,7 +75,6 @@ unsigned char *process_quad_assignment(unsigned char *msg, unsigned int length) 
         data += 24;
     }
     unsigned char *out = list_integer_msg(RS_QUAD_ASSIGN_RESP,quad_list);
-    //fs_error(LOG_ERR,"END process_quad_assignment segment ---> %i",segment);
     return out;
 }
 
@@ -260,10 +254,61 @@ void init_main_listener(int srv, reasoner_cache *data) {
     g_main_loop_run(loop);
 }
 
+static void daemonize (void)
+{
+  /* fork once, we don't want to be process leader */
+  switch(fork()) {
+    case 0:
+      break;
+    case -1:
+      fs_error(LOG_ERR, "fork() error starting daemon: %s", strerror(errno));
+      exit(1);
+    default:
+      _exit(0);
+  }
+
+  /* new session / process group */
+  if (setsid() == -1) {
+    fs_error(LOG_ERR, "setsid() failed starting daemon: %s", strerror(errno));
+    exit(1);
+  }
+
+  /* fork again, separating ourselves from our parent permanently */
+
+  switch(fork()) {
+    case 0:
+      break;
+    case -1:
+      fs_error(LOG_ERR, "fork() error starting daemon: %s", strerror(errno));
+      exit(1);
+    default:
+      _exit(0);
+  }
+
+  /* close stdin, stdout, stderr */
+  close(0); close(1); close(2);
+
+  /* Avahi sucks, we need an open fd or it gets confused -sigh */
+  if (open("/dev/null", 0) == -1) {
+    fs_error(LOG_ERR, "couldn't open /dev/null: %s", strerror(errno));
+  }
+  /* use up some more fds as a precaution against printf() getting
+     written to the wire */
+  open("/dev/null", 0);
+  open("/dev/null", 0);
+
+  /* move somewhere safe and known */
+  if (chdir("/")) {
+    fs_error(LOG_ERR, "chdir failed: %s", strerror(errno));
+  }
+}
+
 int main(int argc, char **argv){
     int c, opt_index=0, port_arg = DEFAULT_REASONER_PORT, help=0;
-    static const char *optstr = "p:k:";
+    static const char *optstr = "Dp:k:";
+    int daemon = 1;
     static struct option longopt[] = {
+    { "daemon", 0, 0, 'D' },
     { "port", 0, 0, 'p' },
     { "kb", 0, 0, 'k' },
     { 0, 0, 0, 0 }
@@ -271,6 +316,9 @@ int main(int argc, char **argv){
 
     while (( c = getopt_long(argc, argv, optstr, longopt, &opt_index)) != -1) {
         switch (c) {
+            case 'D':
+              daemon = 0;
+              break;
             case 'p':
               port_arg = atoi(optarg);
               break;
@@ -286,6 +334,9 @@ int main(int argc, char **argv){
         fprintf(stderr, "Usage: 4s-reasoner -k|--kb <kbname> [-p|--port <port_number>]\n");
         fprintf(stderr, "If port is omitted then %i will be used as default\n",DEFAULT_REASONER_PORT);
         return 1;
+    }
+    if (daemon) {
+       daemonize();
     }
         
 	gbl_password = fsp_argv_password(&argc, argv);
