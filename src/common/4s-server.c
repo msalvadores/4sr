@@ -323,6 +323,24 @@ static void child_exited(GPid pid, gint status, gpointer data)
 
 }
 
+int hostname_is_ip_address(const char *s) {
+    //naive function to dectect ip format, good enough
+    //TODO change to a regex
+    char **toks = g_strsplit_set(s,".",-1);
+    int i;
+    int n=0;
+    for(i=0; toks[i]; i++) {
+        errno = 0;
+        strtoul(toks[i], NULL, 10);
+        if (errno != 0)
+            n++;
+    }
+    if (n==0 && i == 4)
+        return 1;
+    return 0;
+}
+
+
 gboolean accept_fn (GIOChannel *source, GIOCondition condition, gpointer data)
 {
   fsp_backend *backend = (fsp_backend *) data;
@@ -377,7 +395,7 @@ reasoner_conf *new_reasoner_conf(char *host) {
         port = *port_t;
         g_free(tokens);
     }
-    if (!g_hostname_is_ip_address(ip)) {
+    if (!hostname_is_ip_address(ip)) {
         struct hostent *he;
         if ((he = gethostbyname(ip)) == NULL) {  // get the host info
             fs_error(LOG_ERR,"Unable to get IP for reasoner %s - reasoner not attached !!!", ip);
