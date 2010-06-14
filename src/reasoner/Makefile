@@ -3,7 +3,7 @@ include ../darwin.mk
 include ../discovery.mk
 
 
-pkgs = glib-2.0 $(avahi)
+pkgs = glib-2.0 $(avahi) gthread-2.0
 
 ifdef avahi
   mdns_flags = -DUSE_AVAHI

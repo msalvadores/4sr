@@ -234,15 +234,16 @@ void *process_thread(void *arg) {
     }
     process_request(conn,gbl_cache); 
     close(conn);
-    pthread_exit(NULL);
+    g_thread_exit(NULL);
+    return NULL;
 }
 
 gboolean accept_request(GIOChannel *source, GIOCondition condition, gpointer data) {
-    pthread_t process_t;
-    int ret;
-    ret = pthread_create( &process_t, NULL, process_thread , (void *)source );
-    if (ret != 0)
-        fs_error(LOG_ERR,"error creating process_thread %i",ret);
+    errno = 0;
+    GError **gt_error=NULL;
+    GThread * processing_t =g_thread_create(process_thread, source, FALSE, gt_error);
+    if (gt_error)
+        fs_error(LOG_ERR,"error creating process_thread %s",(*gt_error)->message);
     return TRUE;
 }
 
@@ -331,7 +332,7 @@ int main(int argc, char **argv){
         }
     }
     if (help || !gbl_kb_name) {
-        fprintf(stderr, "Usage: 4s-reasoner -k|--kb <kbname> [-p|--port <port_number>]\n");
+        fprintf(stderr, "Usage: 4s-reasoner -k|--kb <kbname> [-p|--port <port_number>] [-D]\n");
         fprintf(stderr, "If port is omitted then %i will be used as default\n",DEFAULT_REASONER_PORT);
         return 1;
     }
@@ -352,5 +353,6 @@ int main(int argc, char **argv){
         exit(-1);
     }
     fs_error(LOG_INFO,"server socket listening port %i ",port);
+    g_thread_init(NULL);
     init_main_listener(server_sckt,gbl_cache);
 }

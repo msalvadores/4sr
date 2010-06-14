@@ -242,6 +242,8 @@ int main(int argc, char *argv[])
     int ret = 0;
 
     fs_query_state *qs = fs_query_init(link);
+    if (show_timing)
+        then = fs_time();
     GTimer* tquery = g_timer_new ();
     fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit
     #if defined(USE_REASONER)
@@ -259,6 +261,8 @@ int main(int argc, char *argv[])
     fs_query_free(qr);
 
     if (show_timing) {
+        double now = fs_time();
+    printf("# execution time %.3fs\n", now-then);
 	printf("seg bind\t(secs)\t\tprice\t(secs)\t\tresolve\t(secs)\t\twait (secs)\n");
 	long long *tics = fsp_profile_write(link);
 
@@ -320,7 +324,9 @@ static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lan
 
 	/* process query string */
 	if (*query && strcmp(query, "#EOQ\n") && strcmp(query, "#END\n")) {
+            double then = 0.0;
             if (show_timing) {
+                then = fs_time();
                 printf("Q: %s\n", query);
             }
 	    fs_query *tq = fs_query_execute(qs, link, bu, query,
@@ -332,7 +338,7 @@ static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lan
 #endif
 	    fs_query_results_output(tq, result_format, 0, stdout);
             if (show_timing) {
-                printf("# time: %f s\n", fs_time() - fs_query_start_time(tq));
+                printf(" time: %f s\n", fs_time() - fs_query_start_time(tq));
                 printf("seg bind\t(secs)\t\tprice\t(secs)\t\tresolve\t(secs)\t\twait (secs)\n");
                 long long *tics = fsp_profile_write(link);
                 fs_query_timing total_time = {0, 0, 0, 0, 0, 0};
@@ -364,9 +370,18 @@ static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lan
             }
 	    fs_query_free(tq);
 	    if (result_format && !strcmp(result_format, "sparql")) {
-                printf("<!-- EOR -->\n");
+                if (show_timing) {
+                    double now = fs_time();
+                    printf("<!-- EOR execution time %.3fs -->\n", now-then);
+                } else {
+                    printf("<!-- EOR -->\n");
+                }
 	    } else {
                 printf("#EOR\n");
+                if (show_timing) {
+                    double now = fs_time();
+                    printf("# execution time %.3fs\n", now-then);
+                }
 	    }
 	    fflush(stdout);
 	}
