@@ -30,9 +30,9 @@
 #include "query-datatypes.h"
 #include "query-intl.h"
 #include "debug.h"
-#include "common/error.h"
-#include "common/hash.h"
-#include "common/rdf-constants.h"
+#include "../common/error.h"
+#include "../common/hash.h"
+#include "../common/rdf-constants.h"
 
 /* returns the number of values for the expression, or INT_MAX if its unbound */
 int fs_opt_num_vals(fs_binding *b, rasqal_literal *l)
@@ -40,22 +40,20 @@ int fs_opt_num_vals(fs_binding *b, rasqal_literal *l)
     if (!l) return 0;
 
     switch (l->type) {
-#if RASQAL_VERSION >= 917
         case RASQAL_LITERAL_XSD_STRING:
         case RASQAL_LITERAL_UDT:
-#endif
 	case RASQAL_LITERAL_URI:
 	case RASQAL_LITERAL_STRING:
 	case RASQAL_LITERAL_BOOLEAN:
 	case RASQAL_LITERAL_INTEGER:
+	case RASQAL_LITERAL_INTEGER_SUBTYPE:
 	case RASQAL_LITERAL_DOUBLE:
 	case RASQAL_LITERAL_FLOAT:
 	case RASQAL_LITERAL_DECIMAL:
 	case RASQAL_LITERAL_DATETIME:
 	    return 1;
 	case RASQAL_LITERAL_VARIABLE: {
-	    char *vname = (char *)l->value.variable->name;
-	    fs_binding *bv = fs_binding_get(b, vname);
+	    fs_binding *bv = fs_binding_get(b, l->value.variable);
 	    if (bv && bv->bound == 1) {
 		return bv->vals->length;
 	    }
@@ -79,22 +77,20 @@ int fs_opt_is_const(fs_binding *b, rasqal_literal *l)
     if (!l) return 0;
 
     switch (l->type) {
-#if RASQAL_VERSION >= 917
         case RASQAL_LITERAL_XSD_STRING:
         case RASQAL_LITERAL_UDT:
-#endif
 	case RASQAL_LITERAL_URI:
 	case RASQAL_LITERAL_STRING:
 	case RASQAL_LITERAL_BOOLEAN:
 	case RASQAL_LITERAL_INTEGER:
+	case RASQAL_LITERAL_INTEGER_SUBTYPE:
 	case RASQAL_LITERAL_DOUBLE:
 	case RASQAL_LITERAL_FLOAT:
 	case RASQAL_LITERAL_DECIMAL:
 	case RASQAL_LITERAL_DATETIME:
 	    return 1;
 	case RASQAL_LITERAL_VARIABLE: {
-	    char *vname = (char *)l->value.variable->name;
-	    fs_binding *bv = fs_binding_get(b, vname);
+	    fs_binding *bv = fs_binding_get(b, l->value.variable);
 	    if (bv && bv->bound == 1) {
 		return 1;
 	    }
@@ -123,8 +119,7 @@ int fs_opt_is_bound(fs_binding *b, rasqal_literal *l)
             if (fs_binding_length(b) == 0) {
                 return 1;
             }
-	    char *vname = (char *)l->value.variable->name;
-	    fs_binding *bv = fs_binding_get(b, vname);
+	    fs_binding *bv = fs_binding_get(b, l->value.variable);
 	    if (bv && bv->bound == 1) {
 		return 1;
 	    }
@@ -132,10 +127,9 @@ int fs_opt_is_bound(fs_binding *b, rasqal_literal *l)
 
 	}
 
-#if RASQAL_VERSION >= 917
+        case RASQAL_LITERAL_INTEGER_SUBTYPE:
         case RASQAL_LITERAL_XSD_STRING:
         case RASQAL_LITERAL_UDT:
-#endif
 	case RASQAL_LITERAL_URI:
 	case RASQAL_LITERAL_STRING:
 	case RASQAL_LITERAL_BOOLEAN:
@@ -163,14 +157,13 @@ static char *var_name(rasqal_literal *l)
     if (!l) return NULL;
 
     switch (l->type) {
-#if RASQAL_VERSION >= 917
         case RASQAL_LITERAL_XSD_STRING:
         case RASQAL_LITERAL_UDT:
-#endif
 	case RASQAL_LITERAL_URI:
 	case RASQAL_LITERAL_STRING:
 	case RASQAL_LITERAL_BOOLEAN:
 	case RASQAL_LITERAL_INTEGER:
+	case RASQAL_LITERAL_INTEGER_SUBTYPE:
 	case RASQAL_LITERAL_DOUBLE:
 	case RASQAL_LITERAL_FLOAT:
 	case RASQAL_LITERAL_DECIMAL:
@@ -343,13 +336,13 @@ static int calc_freq(fs_query *q, int block, GHashTable *freq, rasqal_literal *p
     int ret = 0;
 
     int junk;
-    char *vname;
+    rasqal_variable *var;
     fs_rid_vector *pv = fs_rid_vector_new(1);
     fs_rid_vector *sv = fs_rid_vector_new(1);
     sv->length = 0;
     pv->length = 0;
-    fs_bind_slot(q, -1, q->bb[block], pri, pv, &junk, &vname, 1);
-    if (sec) fs_bind_slot(q, -1, q->bb[block], sec, sv, &junk, &vname, 1);
+    fs_bind_slot(q, -1, q->bb[block], pri, pv, &junk, &var, 1);
+    if (sec) fs_bind_slot(q, -1, q->bb[block], sec, sv, &junk, &var, 1);
     fs_quad_freq fd;
     fd.pri = pv->data[0];
     if (sec) {

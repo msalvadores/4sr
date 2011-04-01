@@ -22,18 +22,11 @@
 
 #include "query-datatypes.h"
 #include "decimal.h"
-#include "common/datatypes.h"
+#include "../common/datatypes.h"
 
 typedef enum {
     FS_ERROR_INVALID_TYPE = 99
 } fs_error;
-
-#if 0
-typedef struct _fs_fixp {
-    int32_t	in;
-    uint32_t	fr;
-} fs_fixp;
-#endif
 
 typedef enum {
     FS_V_RID = 0,
@@ -71,6 +64,7 @@ fs_value fs_value_error(fs_error e, const char *msg);
 fs_value fs_value_uri(const char *u);
 fs_value fs_value_plain(const char *s);
 fs_value fs_value_plain_with_lang(const char *s, const char *l);
+fs_value fs_value_plain_with_dt(const char *s, const char *l);
 fs_value fs_value_string(const char *s);
 fs_value fs_value_double(double f);
 fs_value fs_value_float(double f);
@@ -83,8 +77,12 @@ fs_value fs_value_datetime_from_string(const char *s);
 
 fs_value fs_value_promote(fs_query *q, fs_value a, fs_value b);
 
+fs_value fs_value_fill_lexical(fs_query *q, fs_value a);
+fs_value fs_value_fill_rid(fs_query *q, fs_value a);
+
 int fs_is_numeric(fs_value *a);
 int fs_is_error(fs_value a);
+int fs_is_plain_or_string(fs_value v);
 int fs_value_is_true(fs_value a);
 int fs_value_equal(fs_value a, fs_value b);
 

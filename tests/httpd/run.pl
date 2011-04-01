@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 
 use Term::ANSIColor;
+use POSIX ":sys_wait_h";
 
 $kb_name = "http_test_".$ENV{'USER'};
 
@@ -14,6 +15,7 @@ my $errs = 1;
 my $spawn = 1;
 
 $SIG{USR2} = 'IGNORE';
+$SIG{TERM} = 'IGNORE';
 
 if ($ARGV[0]) {
 	if ($ARGV[0] eq "--exemplar") {
@@ -46,7 +48,7 @@ if ($pid = fork()) {
 		sleep(1);
 	} else {
 		close STDERR;
-		exec("../../src/http/4s-httpd", "-D", "-p", "13579", "$kb_name");
+		exec("../../src/http/4s-httpd", "-X", "-D", "-p", "13579", "$kb_name");
 		die "failed to exec HTTP sever: $!";
 	}
 	print("4s-httpd running on PID $httppid\n");
@@ -107,6 +109,12 @@ if ($pid = fork()) {
 	} else {
 		waitpid($pid, 0);
 	}
+
+	if ($fails) {
+		exit(1);
+	}
+
+	exit(0);
 } else {
 	# child
 	if ($spawn) {

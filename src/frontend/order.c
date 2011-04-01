@@ -23,8 +23,10 @@
 #include "order.h"
 #include "filter.h"
 #include "debug.h"
+#include "results.h"
 #include "query-intl.h"
-#include "common/hash.h"
+#include "../common/hash.h"
+#include "../common/error.h"
 
 struct order_row {
     int row;
@@ -50,62 +52,77 @@ fs_value_print(va);
 printf(" <=> ");
 fs_value_print(vb);
 #endif
-        if (va.valid & fs_valid_bit(FS_V_RID) && va.rid == FS_RID_NULL) {
-            if (vb.valid & fs_valid_bit(FS_V_RID) && vb.rid == FS_RID_NULL) {
-                continue;
-            }
-            return -1 * mod;
-        }
-        if (vb.valid & fs_valid_bit(FS_V_RID) && vb.rid == FS_RID_NULL) {
-            return 1 * mod;
-        }
-        if (va.valid & fs_valid_bit(FS_V_RID) && FS_IS_BNODE(va.rid)) {
-            if (vb.valid & fs_valid_bit(FS_V_RID) && FS_IS_BNODE(vb.rid)) {
-                return (va.rid - vb.rid) * mod;
-            }
-            return -1 * mod;
-        }
-        if (vb.valid & fs_valid_bit(FS_V_RID) && FS_IS_BNODE(vb.rid)) {
-            return 1 * mod;
-        }
-        if (va.valid & fs_valid_bit(FS_V_RID) && FS_IS_URI(va.rid)) {
-            if (vb.valid & fs_valid_bit(FS_V_RID) && FS_IS_URI(vb.rid)) {
-                int cmp = strcmp(va.lex, vb.lex);
-                if (cmp != 0) return cmp * mod;
-                continue;
-            }
-            return -1 * mod;
-        }
-        if (vb.valid & fs_valid_bit(FS_V_RID) && FS_IS_URI(vb.rid)) {
-            return 1 * mod;
-        }
-
-        fs_value cmp = fn_equal(NULL, va, vb);
-        if (!(cmp.valid & fs_valid_bit(FS_V_TYPE_ERROR)) && cmp.in) {
-            continue;
-        }
-        cmp = fn_less_than(NULL, va, vb);
-        if (cmp.valid & fs_valid_bit(FS_V_TYPE_ERROR)) {
-            if (va.lex && vb.lex) {
-                int cmp = strcmp(va.lex, vb.lex);
-                if (cmp != 0) {
-                    return cmp * mod;
-                }
-            }
-
-            /* TODO check for plain v's typed */
-            
+        int order = fs_order_by_cmp(va, vb);
+        if (order == 0) {
             continue;
         }
 
-        if (cmp.in) {
-            return -1 * mod;
-        } else {
-            return 1 * mod;
-        }
+        return order * mod;
     }
 
     return 0;
+}
+
+int fs_order_by_cmp(fs_value va, fs_value vb)
+{
+    if (va.valid & fs_valid_bit(FS_V_RID) && va.rid == FS_RID_NULL) {
+        if (vb.valid & fs_valid_bit(FS_V_RID) && vb.rid == FS_RID_NULL) {
+            return 0;
+        }
+        return -1;
+    }
+    if (vb.valid & fs_valid_bit(FS_V_RID) && vb.rid == FS_RID_NULL) {
+        return 1;
+    }
+    if (va.valid & fs_valid_bit(FS_V_RID) && FS_IS_BNODE(va.rid)) {
+        if (vb.valid & fs_valid_bit(FS_V_RID) && FS_IS_BNODE(vb.rid)) {
+            if (va.rid > vb.rid) {
+                return 1;
+            } else if (va.rid < vb.rid) {
+                return -1;
+            }
+            return 0;
+        }
+        return -1;
+    }
+    if (vb.valid & fs_valid_bit(FS_V_RID) && FS_IS_BNODE(vb.rid)) {
+        return 1;
+    }
+    if (va.valid & fs_valid_bit(FS_V_RID) && FS_IS_URI(va.rid)) {
+        if (vb.valid & fs_valid_bit(FS_V_RID) && FS_IS_URI(vb.rid)) {
+            int cmp = strcmp(va.lex, vb.lex);
+            if (cmp != 0) return cmp;
+            return 0;
+        }
+        return -1;
+    }
+    if (vb.valid & fs_valid_bit(FS_V_RID) && FS_IS_URI(vb.rid)) {
+        return 1;
+    }
+
+    fs_value cmp = fn_equal(NULL, va, vb);
+    if (!(cmp.valid & fs_valid_bit(FS_V_TYPE_ERROR)) && cmp.in) {
+        return 0;
+    }
+    cmp = fn_less_than(NULL, va, vb);
+    if (cmp.valid & fs_valid_bit(FS_V_TYPE_ERROR)) {
+        if (va.lex && vb.lex) {
+            int cmp = strcmp(va.lex, vb.lex);
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+
+        /* TODO check for plain v's typed */
+        
+        return 0;
+    }
+
+    if (cmp.in) {
+        return -1;
+    } else {
+        return 1;
+    }
 }
 
 static int orow_compare(const void *ain, const void *bin)
@@ -121,6 +138,17 @@ static int orow_compare(const void *ain, const void *bin)
     return cmp;
 }
 
+static void reverse_array(int *a, int length)
+{
+    int tmp;
+
+    for (int i=0; i<length/2; i++) {
+        tmp = a[i];
+        a[i] = a[length-i-1];
+        a[length-i-1] = tmp;
+    }
+}
+
 void fs_query_order(fs_query *q)
 {
     int conditions;
@@ -132,10 +160,34 @@ void fs_query_order(fs_query *q)
 printf("@@ ORDER (%d x %d)\n", conditions, length);
 #endif
 
+    /* spot the case where we have ORDER BY ?x, saves evaluating expressions */
+    if (conditions == 1) {
+        rasqal_expression *oe = rasqal_query_get_order_condition(q->rq, 0);
+        if ((oe->op == RASQAL_EXPR_ORDER_COND_ASC ||
+             oe->op == RASQAL_EXPR_ORDER_COND_DESC) &&
+            oe->arg1->op == RASQAL_EXPR_LITERAL &&
+            oe->arg1->literal->type == RASQAL_LITERAL_VARIABLE) {
+            long int col = (long int)oe->arg1->literal->value.variable->user_data;
+            if (col == 0) {
+                fs_error(LOG_CRIT, "missing column");
+
+                return;
+            }
+            int *ordering;
+            if (!fs_sort_column(q, q->bt, col, &ordering)) {
+                if (oe->op == RASQAL_EXPR_ORDER_COND_DESC) {
+                    reverse_array(ordering, q->bt[col].vals->length);
+                }
+                q->ordering = ordering;
+
+                return;
+            }
+        }
+    }
+
     struct order_row *orows = malloc(sizeof(struct order_row) * length);
     fs_value *ordervals = malloc(length * conditions * sizeof(fs_value));
     for (int i=0; i<length; i++) {
-	ordervals[i * conditions].in = i;
 	for (int j=0; j<conditions; j++) {
 	    ordervals[i * conditions + j] = fs_expression_eval(q, i, 0,
 				rasqal_query_get_order_condition(q->rq, j));

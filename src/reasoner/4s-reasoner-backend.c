@@ -208,7 +208,8 @@ unsigned int send_message(int sckt_cl,char *addr,int port,unsigned char *msg, in
 }
 
 
-void notify_import_finished(reasoner_conf *reasoner) {
+void notify_import_finished(fs_backend *be) {
+    reasoner_conf *reasoner = be->reasoner;
     unsigned char *req = request_msg(RS_NOTIFY_IMPORT,0);
     int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     unsigned int count = send_message(sckt_cl,reasoner->addr,reasoner->port,req,FS_HEADER);
@@ -222,16 +223,16 @@ void notify_import_finished(reasoner_conf *reasoner) {
     }
 }
 
-gboolean fs_rid_equal(fs_rid *v1,fs_rid *v2) {
+gboolean fs_rid_equalr(fs_rid *v1,fs_rid *v2) {
 	return *v1==*v2;
 }
 
-guint fs_rid_hash(fs_rid *v) {
+guint fs_rid_hashr(fs_rid *v) {
 	return (guint)(*v);
 }
 
 GHashTable* edges_to_tree(fs_rid_vector **edges) {
-	GHashTable* node_lookup = g_hash_table_new( (GHashFunc) fs_rid_hash, (GEqualFunc) fs_rid_equal);
+	GHashTable* node_lookup = g_hash_table_new( (GHashFunc) fs_rid_hashr, (GEqualFunc) fs_rid_equalr);
     //return node_lookup;
 
 	int length = edges[0]->length;
@@ -255,7 +256,7 @@ GHashTable* edges_to_tree(fs_rid_vector **edges) {
 }
 
 GHashTable* edges_to_table(fs_rid_vector **edges) {
-	GHashTable* node_lookup = g_hash_table_new( (GHashFunc) fs_rid_hash, (GEqualFunc) fs_rid_equal);
+	GHashTable* node_lookup = g_hash_table_new( (GHashFunc) fs_rid_hashr, (GEqualFunc) fs_rid_equalr);
 
 	int length = edges[0]->length;
 	for (int k = 0; k < length; ++k) {

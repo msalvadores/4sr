@@ -37,10 +37,8 @@
 #include <netdb.h>
 #include <glib.h>
 
-
-#if defined(USE_REASONER)
+#include "reasoner/4s-reasoner-backend.h" 
 #include <arpa/inet.h>
-#endif
 
 static char *global_kb_name = NULL;
 static float global_disk_limit = 0.0f;
@@ -76,7 +74,7 @@ static unsigned char * handle_or_fail(const char *name,
 static void child (int conn, fsp_backend *backend, fs_backend *be)
 {
   int auth = 0;
-
+  int data_changed=0;
   while (1) {
     fs_segment segment;
     unsigned int length;
@@ -135,9 +133,11 @@ static void child (int conn, fsp_backend *backend, fs_backend *be)
           reply = handle(backend->get_import_times, be, segment, length, content);
           break;
         case FS_INSERT_QUAD:
+          data_changed++;
           reply = handle(backend->insert_quad, be, segment, length, content);
           break;
         case FS_COMMIT_QUAD:
+          data_changed++;
           reply = handle(backend->commit_quad, be, segment, length, content);
           break;
         case FS_GET_QUERY_TIMES:
@@ -153,6 +153,7 @@ static void child (int conn, fsp_backend *backend, fs_backend *be)
           reply = handle(backend->resolve_attr, be, segment, length, content);
           break;
         case FS_DELETE_MODELS:
+          data_changed++;
           reply = handle(backend->delete_models, be, segment, length, content);
           break;
         case FS_NEW_MODELS:
@@ -191,9 +192,10 @@ static void child (int conn, fsp_backend *backend, fs_backend *be)
         case FS_CHOOSE_SEGMENT:
           reply = handle(backend->choose_segment, be, segment, length, content);
           break;
-	case FS_DELETE_QUADS:
-	  reply = handle(backend->delete_quads, be, segment, length, content);
-	  break;
+        case FS_DELETE_QUADS:
+          data_changed++;
+          reply = handle(backend->delete_quads, be, segment, length, content);
+          break;
         default:
           kb_error(LOG_WARNING, "unexpected message type (%d)", msg[3]);
           reply = fsp_error_new(segment, "unexpected message type");
@@ -363,10 +365,8 @@ gboolean accept_fn (GIOChannel *source, GIOCondition condition, gpointer data)
     /* child process */
     fs_backend *be = backend->open(global_kb_name, 0);
 
-    #if defined(USE_REASONER)
     if (backend->reasoner)
         set_reasoner(backend,be);
-    #endif
 
     if (be) {
       fs_backend_set_min_free(be, global_disk_limit);
@@ -380,7 +380,6 @@ gboolean accept_fn (GIOChannel *source, GIOCondition condition, gpointer data)
   return TRUE;
 }
 
-#if defined(USE_REASONER)
 
 reasoner_conf *new_reasoner_conf(char *host) {
     char *ip,*port;
@@ -412,9 +411,6 @@ reasoner_conf *new_reasoner_conf(char *host) {
 }
 
 void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float disk_limit, char *reasoner_service)
-#else
-void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float disk_limit)
-#endif 
 {
   struct addrinfo hints, *info;
   uint16_t port = FS_DEFAULT_PORT;
@@ -490,14 +486,12 @@ void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float dis
     kb_error(LOG_CRIT, "failed to open backend");
     return;
   }
-  #if defined(USE_REASONER)
   if (reasoner_service) { 
       backend->reasoner = new_reasoner_conf(reasoner_service);
       fprintf(stderr, "Reasoner configured at %s\n",reasoner_service);  
   }
   else
       fprintf(stderr, "No reasoner configured\n");  
-  #endif
 
   GMainLoop *loop = g_main_loop_new (NULL, FALSE);
   fsp_mdns_setup_backend (port, kb_name, backend->segment_count(be));
@@ -509,8 +503,11 @@ void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float dis
   }
 
   signal_actions();
-  fs_error(LOG_INFO, "4store backend %s for kb %s on port %s", FS_BACKEND_VER, kb_name, cport);
-
+  #ifdef FS_RDFS_DOMRAN
+  fs_error(LOG_INFO, "4store backend %s for kb %s on port %s RDFS enabled: subClassOf, subPropertyOf, domain and range)", FS_BACKEND_VER, kb_name, cport);
+  #else
+  fs_error(LOG_INFO, "4store backend %s for kb %s on port %s RDFS enabled: subClassOf, subPropertyOf)", FS_BACKEND_VER, kb_name, cport);
+  #endif
   GIOChannel *listener = g_io_channel_unix_new (srv);
   g_io_add_watch(listener, G_IO_IN, accept_fn, backend);
 

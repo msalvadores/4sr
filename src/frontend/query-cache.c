@@ -28,12 +28,12 @@
 #include "query-cache.h"
 #include "query-intl.h"
 #include "query-datatypes.h"
-#include "common/4store.h"
-#include "common/datatypes.h"
-#include "common/params.h"
-#include "common/error.h"
+#include "../common/4store.h"
+#include "../common/datatypes.h"
+#include "../common/params.h"
+#include "../common/error.h"
 
-#define CACHE_SIZE 128
+#define CACHE_SIZE 1024
 
 struct _fs_bind_cache {
     int filled;     /* true if cache entry is in use */
@@ -83,7 +83,7 @@ int fs_bind_cache_wrapper(fs_query_state *qs, fs_query *q, int all,
     fs_rid cache_key[4];
 
     /* only consult the cache for optimasation levels 0-2 */
-    if (q->opt_level < 3) goto skip_cache;
+    if (q && q->opt_level < 3) goto skip_cache;
 
     cachable = 1;
 
@@ -118,7 +118,7 @@ int fs_bind_cache_wrapper(fs_query_state *qs, fs_query *q, int all,
             for (int s=0; s<slots; s++) {
                 (*result)[s] = fs_rid_vector_copy(qs->bind_cache[cache_hash].res[s]);
             }
-            fsp_hit_limits_add(q->link, qs->bind_cache[cache_hash].limited);
+            fsp_hit_limits_add(qs->link, qs->bind_cache[cache_hash].limited);
             qs->bind_cache[cache_hash].hits++;
 
             g_static_mutex_unlock(&qs->cache_mutex);
@@ -131,27 +131,29 @@ int fs_bind_cache_wrapper(fs_query_state *qs, fs_query *q, int all,
 
     skip_cache:;
 
-    int limited_before = fsp_hit_limits(q->link);
+    int limited_before = fsp_hit_limits(qs->link);
 
-    #if defined(USE_REASONER)
-    ret = fsp_bind_limit_all(q->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit);
-    #else
-    if (all) {
-        ret = fsp_bind_limit_all(q->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit);
-    } else {
-        ret = fsp_bind_limit_many(q->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit);
-    }
-    #endif
+    ret = fsp_bind_limit_all(qs->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit);
     
 
-    int limited = fsp_hit_limits(q->link) - limited_before;
+    int limited = fsp_hit_limits(qs->link) - limited_before;
+
     if (ret) {
         fs_error(LOG_ERR, "bind failed in '%s', %d segments gave errors",
-                 fsp_kb_name(q->link), ret);
+                 fsp_kb_name(qs->link), ret);
 
         exit(1);
     }
-    if (cachable) {
+
+    int small = 1;
+    for (int s=0; s<slots; s++) {
+        if (fs_rid_vector_length((*result)[s]) > 10000) {
+            small = 0;
+            break;
+        }
+    }
+
+    if (cachable && small) {
         g_static_mutex_lock(&qs->cache_mutex);
         if (qs->bind_cache[cache_hash].filled == 1) {
           for (int s=0; s<4; s++) {
@@ -205,6 +207,16 @@ int fs_query_cache_flush(fs_query_state *qs, int verbosity)
             }
         }
     }
+    if (verbosity > 0) {
+        printf("# @resolver@ cache_stats hits %u l1 %u l2 %u fails %u (%.4f perc. success)\n",
+            qs->cache_hits,qs->cache_success_l1,qs->cache_success_l2,qs->cache_fail,
+            ((((double)qs->cache_success_l1)+((double)qs->cache_success_l2))/((double)qs->cache_hits))*100.0);
+        printf("# @resolver@ cache_stats items pre cached %u calls %u elapse %.3f\n",
+        qs->pre_cache_total,qs->resolve_all_calls,qs->resolve_all_elapse);
+        printf("# @resolver@ cache_stats resolve single calls %u elapse %.3f\n",
+        qs->cache_fail,qs->resolve_unique_elapse);
+    }
+
     g_static_mutex_unlock(&qs->cache_mutex);
     
     return 0;

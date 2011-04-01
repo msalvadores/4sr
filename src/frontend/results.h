@@ -3,7 +3,7 @@
 
 #include "query-datatypes.h"
 #include "filter-datatypes.h"
-#include "common/datatypes.h"
+#include "../common/datatypes.h"
 
 #define FS_RESULT_FLAG_HEADERS             16
 
@@ -24,6 +24,7 @@ typedef struct _fs_row {
 	const char     *lex;
 	const char     *dt;
 	const char     *lang;
+	int            stop;
 } fs_row;
 
 /* evaluate an expression that may include variables, returning the evaluated
@@ -41,5 +42,12 @@ int fs_query_get_columns(fs_query *q);
 fs_row *fs_query_fetch_header_row(fs_query *q);
 fs_row *fs_query_fetch_row(fs_query *q);
 void fs_query_results_output(fs_query *q, const char *fmt, int flags, FILE *out);
+
+/* escape URI, return result must be g_free'd */
+
+char *fs_uri_escape(const char *str);
+
+/* apply ORDER BY to a single column in a binding table, results in *sorted */
+int fs_sort_column(fs_query *q, fs_binding *b, int col, int **sorted);
 
 #endif

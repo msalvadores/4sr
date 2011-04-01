@@ -3,7 +3,7 @@
 
 #include "results.h"
 #include "query-cache.h"
-#include "common/4store.h"
+#include "../common/4store.h"
 
 #include <raptor.h>
 #include <rasqal.h>
@@ -20,10 +20,20 @@ struct _fs_query_state {
     /* features supported by the backend */
     int freq_available;
 
-#ifdef HAVE_RASQAL_WORLD
-    /* rasqal state */
-    rasqal_world* rasqal_world;
-#endif /* HAVE_RASQAL_WORLD */
+    /* raptor + rasqal state */
+    rasqal_world *rasqal_world;
+    raptor_world *raptor_world;
+
+    int verbosity;
+    /* the following cache stats are filled only if verbosity > 0 */
+    unsigned int cache_hits; /* total queries to the cache */
+    unsigned int cache_success_l1; /* number of l1 success hits */
+    unsigned int cache_success_l2;  /* number of l2 success hits */
+    unsigned int cache_fail;  /* number of cache hits with no data on l1 or l2 */
+    unsigned int pre_cache_total; /* number of items pre cached for the query */
+    unsigned int resolve_all_calls; /* total num of resolve_all calls */
+    double resolve_all_elapse;  /* total sum of elapsed time on resolve_all calls */
+    double resolve_unique_elapse; /* total sum of elapsed time on resolve(single rid) calls */
 };
 
 struct _fs_query {
@@ -33,6 +43,7 @@ struct _fs_query {
     fs_binding *bb[FS_MAX_BLOCKS];	/* per block binding table */
     int segments;
     int num_vars;			/* number of projected variables */
+    int num_vars_total;			/* number of total variables */
     int expressions;			/* number of projected expressions */
     int construct;
     int describe;
@@ -68,6 +79,13 @@ struct _fs_query {
     int *ordering;
     double start_time;
     fs_rid_vector *default_graphs;
+    int console;			/* true if the query is being used from a console app */
+    int aggregate;			/* true if the query uses aggregates */
+    long group_length;			/* number of rows in the current group */
+    uint64_t *group_rows;		/* row numbers of the rows in the current group */
+    unsigned char *apply_constraints; /* bit array initialized to 1s, 
+                                        position x shifts to 0 if no apply cons */
+    int group_by;
 };
 
 #endif

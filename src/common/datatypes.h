@@ -18,6 +18,7 @@
 #define FS_BIND_OPTIONAL          0x200
 #define FS_BIND_UNION             0x400
 #define FS_BIND_REVERSE           #error feature removed
+#define FS_QUERY_CONSOLE_OUTPUT   0x800
 
 
 #define FS_BIND_SAME_MASK        0xf000
@@ -37,21 +38,18 @@
 #define FS_BIND_SAME_ABAB        0xd000
 #define FS_BIND_SAME_ABBA        0xe000
 
-#define FS_QUERY_RESTRICTED    0x800000
+#define FS_QUERY_RESTRICTED        0x800000
 
-#define FS_BIND_BY_SUBJECT    0x1000000
-#define FS_BIND_BY_OBJECT     0x2000000
+#define FS_BIND_BY_SUBJECT        0x1000000
+#define FS_BIND_BY_OBJECT         0x2000000
 /* FS_BIND_START is backend-only, never sent over the wire */
-#define FS_BIND_END           0x8000000
+#define FS_BIND_END               0x8000000
 /* FS_BIND_PRICE is backend-only, never sent over the wire */
-#define FS_BIND_PRICE        0x10000000
-#define FS_QUERY_EXPLAIN     0x20000000
-#define FS_QUERY_COUNT       0x40000000
-#define FS_QUERY_DEFAULT_GRAPH 0x80000000
-
-#if defined(USE_REASONER)
-
-#define REASONER_BIND_OP          0x800
+#define FS_BIND_PRICE            0x10000000
+#define FS_QUERY_EXPLAIN         0x20000000
+#define FS_QUERY_COUNT           0x40000000
+#define FS_QUERY_DEFAULT_GRAPH   0x80000000
+#define REASONER_BIND_OP         0x10000000
 
 typedef struct {
     char *target_kb;
@@ -59,7 +57,6 @@ typedef struct {
     int port;
 } reasoner_conf;
 
-#endif 
 
 typedef unsigned long long int fs_rid;
 typedef uint32_t fs_segment;

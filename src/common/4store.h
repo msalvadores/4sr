@@ -7,9 +7,7 @@
 #include <syslog.h>
 
 #include "datatypes.h"
-#include "backend/backend.h"
-
-#define SERVICE_TYPE "_4srcluster._tcp"
+#include "../backend/backend.h"
 
 /* message types */
 /* use a #define because these are part of the on-the-wire protocol
@@ -72,6 +70,8 @@
 #define FS_CHOOSE_SEGMENT 0x31
 
 #define FS_DELETE_QUADS 0x32
+
+#define FS_GET_REASONER_LOCATION 0x60
 
 /* message header  = 16 bytes */
 #define FS_HEADER 16
@@ -269,17 +269,11 @@ typedef struct {
   void (* close) (fs_backend *backend);
   int (* segment_count) (fs_backend *backend);
   
-  #if defined(USE_REASONER)
     reasoner_conf *reasoner;
-  #endif
 } fsp_backend;
 
-#if defined(USE_REASONER)
 void fsp_serve (const char *kb_name, fsp_backend *implementation, int daemon, float free_disk, char *reasoner_service);
 void set_reasoner(fsp_backend *backend,fs_backend *be);
-#else
-void fsp_serve (const char *kb_name, fsp_backend *implementation, int daemon, float free_disk);
-#endif
 const char *fsp_kb_name(fsp_link *link);
 
 int fsp_hit_limits(fsp_link *link);

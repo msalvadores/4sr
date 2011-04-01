@@ -13,9 +13,10 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-/*
- *  Copyright 2006 Nick Lamb for Garlik.com
+
+
+    Copyright 2006 Nick Lamb for Garlik.com
+    Copyright 2010 Martin Galpin (CORS support)
  */
 
 #define _GNU_SOURCE
@@ -36,24 +37,31 @@
 
 #include <rasqal.h>
 
-#include "common/4store.h"
-#include "common/error.h"
-#include "common/hash.h"
+#include "4store-config.h"
+#include "../common/4store.h"
+#include "../common/error.h"
+#include "../common/hash.h"
+#include "../common/gnu-options.h"
 
-#include "frontend/query.h"
-#include "frontend/import.h"
-#include "frontend/update.h"
+#include "../frontend/query.h"
+#include "../frontend/import.h"
+#include "../frontend/update.h"
 
 #include "httpd.h"
 
 #define WATCHDOG_RATE 16000 /* bytes per second */
 
+/* is this request a valid CORS request? */
+
+#define IS_CORS(ctxt) (cors_support && \
+  (ctxt->method == FS_HTTP_HEAD || ctxt->method == FS_HTTP_OPTIONS \
+   || ctxt->method == FS_HTTP_GET) && \
+  g_hash_table_lookup(ctxt->headers, "origin"))
+
 /* file globals */
 
-#if defined(USE_REASONER)
 static char *gbl_kb_name = NULL;
 static char *gbl_password = NULL;
-#endif
 
 static raptor_uri *bu;
 static fsp_link *fsplink;
@@ -64,6 +72,8 @@ static int global_import_count = 0;
 static int unsafe = 0;
 static int default_graph = 0;
 static int soft_limit = 0; /* default value for soft limit */
+static int opt_level = -1;  /* default value for optimisation level */
+static int cors_support = -1; /* cross-origin resource sharing (CORS) support */
 
 static fs_query_state *query_state;
 
@@ -75,6 +85,14 @@ static void http_import_queue_remove(client_ctxt *ctxt);
 static void http_put_finished(client_ctxt *ctxt, const char *msg);
 
 static FILE *ql_file = NULL;
+
+static pid_t cpid = 0;
+
+volatile static unsigned int last_query_id = 0;
+
+/* set *set if the key value is set in kb_name, or default */
+static void set_boolean(GKeyFile *keyfile, const char *kb_name, const char *key, int *set);
+static void set_string(GKeyFile *keyfile, const char *kb_name, const char *key, const char **set);
 
 static void query_log_open (const char *kb_name)
 {
@@ -104,10 +122,19 @@ static void query_log_reopen ()
   query_log_open(fsp_kb_name(fsplink));
 }
 
-static void query_log (const char *query)
+static void reopen_link() {
+  //FIXME this is a workaround to allow 4s-reasoner get updated the rdfs triples, otherwise deadlock
+  fs_error(LOG_INFO, "giving entrance to reasoner (1 second free locks)");
+  fsp_close_link(fsplink);
+  sleep(1);
+  fsplink = fsp_open_link(gbl_kb_name, gbl_password, FS_OPEN_HINT_RW);
+  fs_error(LOG_INFO, "link reaopen");
+}
+
+static void query_log (client_ctxt *ctxt, const char *query)
 {
   if (ql_file) {
-    fprintf(ql_file, "#####\n%s\n", query);
+    fprintf(ql_file, "##### Q%u\n%s\n", ctxt->query_id, query);
     fflush(ql_file);
   }
 }
@@ -235,6 +262,9 @@ static void http_header(client_ctxt *ctxt, const char *code, const char *mimetyp
   if (mimetype) {
     http_send(ctxt, "Content-Type: "); http_send(ctxt, mimetype); http_send(ctxt, "\r\n");
   }
+  if(IS_CORS(ctxt)) {
+    http_send(ctxt, "Access-Control-Allow-Origin: *\r\n");
+  }
   http_send(ctxt, "X-Endpoint-Description: /description/"); http_send(ctxt, "\r\n");
   http_send(ctxt, "\r\n");
 }
@@ -243,16 +273,13 @@ static void http_code(client_ctxt *ctxt, const char *code)
 {
   http_send(ctxt, "HTTP/1.0 "); http_send(ctxt, code); http_send(ctxt, "\r\n");
   http_send(ctxt, "Server: 4s-httpd/" GIT_REV "\r\n");
-  http_send(ctxt, "Content-Type: text/html; charset=UTF-8\r\n");
+  http_send(ctxt, "Content-Type: text/plain; charset=UTF-8\r\n");
+  if(IS_CORS(ctxt)) {
+    http_send(ctxt, "Access-Control-Allow-Origin: *\r\n");
+  }
   http_send(ctxt, "\r\n");
-  http_send(ctxt, "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n");
-  http_send(ctxt, "<html><head><title>");
-  http_send(ctxt, code); http_send(ctxt, "</title></head>\n");
-  http_send(ctxt, "<body><h1>");
-  http_send(ctxt, code);
-  http_send(ctxt, "</h1>\n<p>This is a 4store SPARQL server.</p>");
-  http_send(ctxt, "<p>4store " GIT_REV "</p>");
-  http_send(ctxt, "</body></html>\n");
+  http_send(ctxt, code); http_send(ctxt, "\n");
+  http_send(ctxt, "This is a 4store SPARQL server " GIT_REV "\n");
 }
 
 static void http_404(client_ctxt *ctxt, const char *url)
@@ -260,15 +287,11 @@ static void http_404(client_ctxt *ctxt, const char *url)
   fs_error(LOG_INFO, "HTTP 404 for %s", url);
   http_send(ctxt, "HTTP/1.0 404 Not found\r\n");
   http_send(ctxt, "Server: 4s-httpd/" GIT_REV "\r\n");
-  http_send(ctxt, "Content-Type: text/html; charset=UTF-8\r\n");
+  http_send(ctxt, "Content-Type: text/plain; charset=UTF-8\r\n");
   http_send(ctxt, "\r\n");
-  http_send(ctxt, "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n");
-  http_send(ctxt, "<html><head><title>Not found</title></head>\n");
-  http_send(ctxt, "<body><h1>Not found</h1>\n");
-  http_send(ctxt, "<p>This is a 4store SPARQL server.</p>");
-  http_send(ctxt, "<p>Check <a href=\"/status/\">the status page</a>.</p>");
-  http_send(ctxt, "<p>4store " GIT_REV "</p>");
-  http_send(ctxt, "</body></html>\n");
+  http_send(ctxt, "Not found\n");
+  http_send(ctxt, "This is a 4store SPARQL server " GIT_REV "\n");
+  http_send(ctxt, "Check /status/ for more info\n");
 }
 
 static void http_error(client_ctxt *ctxt, const char *error)
@@ -319,20 +342,41 @@ static void http_query_worker(gpointer data, gpointer user_data)
 {
   client_ctxt *ctxt = (client_ctxt *) data;
   
-  #if defined(USE_REASONER)
   int optlevel = ctxt->no_reasoning ? 3 : 0;
-  #else
-  int optlevel = 3;
-  #endif
 
-  ctxt->qr = fs_query_execute(query_state, fsplink, bu, ctxt->query_string, ctxt->query_flags, optlevel, ctxt->soft_limit
-  #if defined(USE_REASONER)  
-  ,ctxt->no_reasoning);
-  #else
-  ); //FIXME this is not nice
-  #endif
+  ctxt->start_time = fs_time();
+  ctxt->qr = fs_query_execute(query_state, fsplink, bu, ctxt->query_string, ctxt->query_flags, optlevel, ctxt->soft_limit, 0, ctxt->no_reasoning);
+  if (ctxt->qr->errors) {
+    http_error(ctxt, "400 Parser error");
+    GSList *w = ctxt->qr->warnings;
+    if (w) {
+       http_send(ctxt, "\n");
+    }
+    while (w) {
+       http_send(ctxt, w->data);
+       http_send(ctxt, "\n");
+       w = w->next;
+    }
+    http_close(ctxt);
+    fs_query_free(ctxt->qr);
+    ctxt->qr = NULL;
+    free(ctxt->query_string);
+    ctxt->query_string = NULL;
+    if (ctxt->output) {
+      g_free(ctxt->output);
+      ctxt->output = NULL;
+    }
+
+    return;
+  }
+
   http_send(ctxt, "HTTP/1.0 200 OK\r\n");
   http_send(ctxt, "Server: 4s-httpd/" GIT_REV "\r\n");
+
+  if(IS_CORS(ctxt)) {
+    http_send(ctxt, "Access-Control-Allow-Origin: *\r\n");
+  }
+
   const char *accept = g_hash_table_lookup(ctxt->headers, "accept");
 
   fcntl(ctxt->sock, F_SETFL, 0 /* not O_NONBLOCK */); /* blocking */
@@ -374,12 +418,17 @@ static void http_query_worker(gpointer data, gpointer user_data)
 
     fclose(fp);
   }
+  if (ql_file) {
+    fprintf(ql_file, "#### execution time for Q%u: %fs\n", ctxt->query_id, fs_time() - ctxt->start_time);
+    fflush(ql_file);
+  }
   http_close(ctxt);
 }
 
 static void http_answer_query(client_ctxt *ctxt, const char *query)
 {
-  query_log(query);
+  ctxt->query_id = ++last_query_id;
+  query_log(ctxt, query);
   ctxt->query_string = g_strdup(query);
   ctxt->update_string = NULL;
   g_source_remove_by_user_data(ctxt);
@@ -404,7 +453,7 @@ static void http_import_start(client_ctxt *ctxt)
   if (ctxt->update_string) {
 #if RASQAL_VERSION > 917
     char *message = NULL;
-    int ret = fs_update(fsplink, ctxt->update_string, &message, unsafe);
+    int ret = fs_update(query_state, ctxt->update_string, &message, unsafe);
     fs_query_cache_flush(query_state, 0);
     http_import_queue_remove(ctxt);
     if (ret == 0) {
@@ -416,15 +465,17 @@ static void http_import_start(client_ctxt *ctxt)
     http_send(ctxt, "Content-Type: text/plain; charset=utf-8\r\n\r\n");
     if (message) {
       http_send(ctxt, message);
+      g_free(message);
     }
     http_send(ctxt, "\n");
+    reopen_link();
     http_close(ctxt);
 #else
     http_import_queue_remove(ctxt);
     http_send(ctxt, "HTTP/1.0 500 Not Implemented\r\n");
     http_send(ctxt, "Server: 4s-httpd/" GIT_REV "\r\n");
     http_send(ctxt, "Content-Type: text/plain; charset=utf-8\r\n\r\n");
-    http_send(ctxt, "SPARQL Update support requires rasqal 0.9.17+\n");
+    http_send(ctxt, "SPARQL Update support requires rasqal 0.9.18 or newer\n");
     http_send(ctxt, "\n");
     http_close(ctxt);
 #endif
@@ -469,7 +520,9 @@ static void http_import_start(client_ctxt *ctxt)
 
   fs_rid_vector_free(mvec);
   char *type = just_content_type(ctxt);
-  fs_import_stream_start(fsplink, ctxt->import_uri, type, has_o_index, &global_import_count);
+  if (fs_import_stream_start(fsplink, ctxt->import_uri, type, has_o_index, &global_import_count)) {
+    fs_error(LOG_CRIT, "failed to start stream parse");
+  }
   g_free(type);
 
   guint timeout = 30 + (ctxt->bytes_left / WATCHDOG_RATE);
@@ -482,6 +535,7 @@ static void http_import_start(client_ctxt *ctxt)
 static void http_post_data(client_ctxt *ctxt, char *model, const char *content_type, char *data)
 {
   ctxt->importing = 1;
+  ctxt->no_reasoning = 1;
   long int length = strlen(data);
   fs_error(LOG_INFO, "starting add to %s (%ld bytes)", model, length);
 
@@ -515,6 +569,8 @@ static void http_post_data(client_ctxt *ctxt, char *model, const char *content_t
 
   ctxt->importing = 0;
   fs_error(LOG_INFO, "finished add to %s", model);
+  
+  reopen_link();
 
   http_import_queue_remove(ctxt);
 
@@ -561,14 +617,7 @@ static void http_put_finished(client_ctxt *ctxt, const char *msg)
   g_free(ctxt->import_uri);
   ctxt->import_uri = NULL;
 
-  #if defined(USE_REASONER)
-  //FIXME this is a workaround to allow 4s-reasoner get updated the rdfs triples, otherwise deadlock
-  fs_error(LOG_INFO, "giving entrace to reasoner (1 second free locks)");
-  fsp_close_link(fsplink);
-  sleep(2);
-  fsplink = fsp_open_link(gbl_kb_name, gbl_password, FS_OPEN_HINT_RW);
-  fs_error(LOG_INFO, "link reaopen");
-  #endif
+  reopen_link();
 
   http_import_queue_remove(ctxt);
 
@@ -587,12 +636,10 @@ static void http_put_finished(client_ctxt *ctxt, const char *msg)
 
 static void http_put_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
 {
-  /* special case, allow /sparql/http://example.com/ as an alias for
-                         http://example.com/ */
-  if (!strncmp(url, "/sparql/", 8)) {
-    url += 8;
+  if (!strncmp(url, "/data/?graph=", 13)) { /* SPARQL 1.1 way */
+    url += 13;
     url_decode(url);
-  } else if (!strncmp(url, "/data/", 6)) { /* we want to move people towards /data/ */
+  } else if (!strncmp(url, "/data/", 6)) { /* pre-SPARQL 1.1 4store way */
     url += 6;
     url_decode(url);
   } else if (!strncmp(url, "/", 1)) {
@@ -621,12 +668,10 @@ static void http_put_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
 
 static void http_delete_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
 {
-  /* special case, allow /sparql/http://example.com/ as an alias for
-                         http://example.com/ */
-  if (!strncmp(url, "/sparql/", 8)) {
-    url += 8;
+  if (!strncmp(url, "/data/?graph=", 13)) { /* SPARQL 1.1 way */
+    url += 13;
     url_decode(url);
-  } else if (!strncmp(url, "/data/", 6)) { /* we want to move people towards /data/ */
+  } else if (!strncmp(url, "/data/", 6)) { /* pre-SPARQL 1.1 4store syntax */
     url += 6;
     url_decode(url);
   } else if (!strncmp(url, "/", 1)) {
@@ -651,14 +696,7 @@ static void http_delete_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
     fs_query_cache_flush(query_state, 0);
     fs_error(LOG_INFO, "deleted model <%s>", url);
     http_error(ctxt, "200 deleted successfully");
-    #if defined(USE_REASONER)
-    //FIXME this is a workaround to allow 4s-reasoner get updated the rdfs triples, otherwise deadlock
-    fs_error(LOG_INFO, "giving entrace to reasoner (1 second free locks)");
-    fsp_close_link(fsplink);
-    sleep(2);
-    fsplink = fsp_open_link(gbl_kb_name, gbl_password, FS_OPEN_HINT_RW);
-    fs_error(LOG_INFO, "link reaopen");
-    #endif
+    reopen_link();
   }
   fs_rid_vector_free(mvec);
 
@@ -887,6 +925,9 @@ static void http_get_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         url_decode(value);
         if (strlen(value)) { /* ignore empty string, default form value */
           ctxt->soft_limit = atoi(value);
+	  if(ctxt->soft_limit == 0) {
+  	    ctxt->soft_limit = -1;
+	  }
         }
       } else if (!strcmp(key, "output") && value) {
         url_decode(value);
@@ -895,11 +936,9 @@ static void http_get_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         url_decode(value);
         default_graph = value;
       }
-      #if defined(USE_REASONER)
       else if (!strcmp(key, "no-reasoner")) {
-        ctxt->no_reasoning = 1;
+        ctxt->no_reasoning = !strcmp(value, "1") || !strcmp(value, "true") || !strcmp(value, "yes");
       }
-      #endif
       qs = next;
     }
     if (query) {
@@ -908,6 +947,9 @@ static void http_get_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
       http_error(ctxt, "500 SPARQL protocol error");
       http_close(ctxt);
     }
+  } else if (!strcmp(path, "/update/")) {
+      http_error(ctxt, "500 SPARQL protocol error, update requests must use POST");
+      http_close(ctxt);
   } else if (!strcmp(path, "/sparql")) {
     http_redirect(ctxt, "sparql/");
     http_close(ctxt);
@@ -949,7 +991,7 @@ static void http_head_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
   } else if (!strcmp(path, "/test/")) {
     http_header(ctxt, "200", "text/html; charset=UTF-8");
   } else {
-    http_header(ctxt, "404", "text/html; charset=UTF-8");
+    http_header(ctxt, "404", "text/plain; charset=UTF-8");
   }
 
   http_close(ctxt);
@@ -973,7 +1015,7 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
     ctxt->bytes_left = length ? atol(length) : 0;
 
     if (ctxt->bytes_left == 0) {
-      http_error(ctxt, "500 SPARQL protocol error, empty");
+      http_error(ctxt, "411 content length required");
       http_close(ctxt);
       return;
     }
@@ -1025,11 +1067,9 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         url_decode(value);
         default_graph = value;
       }
-      #if defined(USE_REASONER)
       else if (!strcmp(key, "no-reasoner")) {
          ctxt->no_reasoning = 1;
       }
-      #endif
       qs = next;
     }
     if (query) {
@@ -1052,7 +1092,7 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
     ctxt->bytes_left = length ? atol(length) : 0;
 
     if (ctxt->bytes_left == 0) {
-      http_error(ctxt, "500 SPARQL protocol error, empty");
+      http_error(ctxt, "411 content length required");
       http_close(ctxt);
       return;
     }
@@ -1125,7 +1165,7 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
     ctxt->bytes_left = length ? atol(length) : 0;
 
     if (ctxt->bytes_left == 0) {
-      http_error(ctxt, "500 SPARQL REST protocol error, empty");
+      http_error(ctxt, "411 content length required");
       http_close(ctxt);
       return;
     }
@@ -1190,10 +1230,33 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
   }
 }
 
+static void http_options_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
+{
+  http_send(ctxt, "HTTP/1.1 200 OK\r\n");
+  http_send(ctxt, "Access-Control-Allow-Origin: *\r\n");
+  http_send(ctxt, "Access-Control-Allow-Methods: GET, OPTIONS\r\n");
+  http_send(ctxt, "Access-Control-Max-Age: 3628800\r\n");
+
+  const char *headers =
+    g_hash_table_lookup(ctxt->headers, "access-control-request-headers");
+
+  if(headers) {
+    /* Currently allowing any request headers */
+    http_send(ctxt, "Access-Control-Allow-Headers: ");
+    http_send(ctxt, headers); http_send(ctxt, "\r\n");
+  }
+
+  http_send(ctxt, "Content-Length: 0\r\n");
+  http_send(ctxt, "\r\n");
+
+  http_close(ctxt);
+}
+
 static void http_request(client_ctxt *ctxt, gchar *request)
 {
   if (!strncasecmp(request, "POST ", 5)) {
     /* POST request */
+    ctxt->method = FS_HTTP_POST;
     char *url = strdup(request + 5);
     char *space = strrchr(url, ' ');
     char *protocol = NULL;
@@ -1205,6 +1268,7 @@ static void http_request(client_ctxt *ctxt, gchar *request)
     free(url);
   } else if (!strncasecmp(request, "HEAD ", 5)) {
     /* HEAD request */
+    ctxt->method = FS_HTTP_HEAD;
     char *url = strdup(request + 5);
     char *space = strrchr(url, ' ');
     char *protocol = NULL;
@@ -1216,6 +1280,7 @@ static void http_request(client_ctxt *ctxt, gchar *request)
     free(url);
   } else if (!strncasecmp(request, "GET ", 4)) {
     /* GET request */
+    ctxt->method = FS_HTTP_GET;
     char *url = strdup(request + 4);
     char *space = strrchr(url, ' ');
     char *protocol = NULL;
@@ -1227,6 +1292,7 @@ static void http_request(client_ctxt *ctxt, gchar *request)
     free(url);
   } else if (!strncasecmp(request, "PUT ", 4)) {
     /* PUT request */
+    ctxt->method = FS_HTTP_PUT;
     char *url = strdup(request + 4);
     char *space = strrchr(url, ' ');
     char *protocol = NULL;
@@ -1238,6 +1304,7 @@ static void http_request(client_ctxt *ctxt, gchar *request)
     free(url);
   } else if (!strncasecmp(request, "DELETE ", 7)) {
     /* DELETE request */
+    ctxt->method = FS_HTTP_DELETE;
     char *url = strdup(request + 7);
     char *space = strrchr(url, ' ');
     char *protocol = NULL;
@@ -1246,6 +1313,18 @@ static void http_request(client_ctxt *ctxt, gchar *request)
       *space = '\0';
     }
     http_delete_request(ctxt, url, protocol);
+    free(url);
+  } else if(!strncasecmp(request, "OPTIONS ", 8) && cors_support) {
+    /* OPTIONS request */
+    ctxt->method = FS_HTTP_OPTIONS;
+    char *url = strdup(request + 8);
+    char *space = strrchr(url, ' ');
+    char *protocol = NULL;
+    if (space) {
+      protocol = space + 1;
+      *space = '\0';
+    }
+    http_options_request(ctxt, url, protocol);
     free(url);
   } else {
     /* 400 */
@@ -1392,7 +1471,8 @@ static void do_kill(int sig)
 
   signal (sig, SIG_DFL);
   fs_error(LOG_INFO, "signal %s received", strsignal(sig));
-  kill (0, sig);
+  kill (cpid, sig);
+  kill (getpid(), sig);
 }
 
 static void do_sigmisc(int sig)
@@ -1561,9 +1641,7 @@ static int server_setup (int background, const char *host, const char *port)
     fs_error(LOG_INFO, "4store HTTP daemon " GIT_REV " started on port %s", port);
   }
 
-  #if defined(USE_REASONER)
   fs_error(LOG_INFO, "[with reasoner]");
-  #endif
   return srv;
 }
 
@@ -1571,10 +1649,8 @@ static void child (int srv, char *kb_name, char *password)
 {
   signal_actions_child();
 
-#if defined(USE_REASONER)
   gbl_kb_name = kb_name;
   gbl_password = password;
-#endif
 
   fsplink = fsp_open_link(kb_name, password, FS_OPEN_HINT_RW);
   if (!fsplink) {
@@ -1586,20 +1662,15 @@ static void child (int srv, char *kb_name, char *password)
     exit(4);
   }
 
-  raptor_init();
-#ifndef HAVE_RASQAL_WORLD
-  rasqal_init();
-#endif /* ! HAVE_RASQAL_WORLD */
   fs_hash_init(fsp_hash_type(fsplink));
-
-  bu = raptor_new_uri((unsigned char *)"local:");
 
   const char *features = fsp_link_features(fsplink);
   has_o_index = !(strstr(features, "no-o-index")); /* tweak */
 
   query_log_open(kb_name);
 
-  query_state = fs_query_init(fsplink);
+  query_state = fs_query_init(fsplink, NULL, NULL);
+  bu = raptor_new_uri(query_state->raptor_world, (unsigned char *)"local:local");
   g_thread_init(NULL);
   pool = g_thread_pool_new(http_query_worker, NULL, QUERY_THREAD_POOL_SIZE, FALSE, NULL);
 
@@ -1651,10 +1722,18 @@ int main(int argc, char *argv[])
   char *kb_name = NULL;
 
   const char *host = NULL;
-  const char *port = "8080";
+  const char *port = NULL;
+
+  int help = 0;
+  int help_return = 1;
+  if (fs_gnu_options(argc, argv, NULL)) {
+    help = 1;
+    help_return = 0;
+  }
+
 
   int o;
-  while ((o = getopt(argc, argv, "DH:p:Uds:")) != -1) {
+  while (!help && (o = getopt(argc, argv, "DH:p:Uds:O:X")) != -1) {
     switch (o) {
       case 'D':
         daemonize = 0;
@@ -1673,26 +1752,99 @@ int main(int argc, char *argv[])
 	break;
       case 's':
 	soft_limit = atoi(optarg);
+	if (soft_limit == 0) {
+	  /* -1 means off */
+	  soft_limit = -1;
+	}
+	break;
+      case 'O':
+	opt_level = atoi(optarg);
+	break;
+      case 'X':
+	cors_support = 1;
+	break;
+      default:
+	help = 1;
 	break;
     }
   }
 
-  if (optind >= argc) {
-    fprintf(stderr, "%s revision %s\n", argv[0], GIT_REV);
-    fprintf(stderr, "Usage: %s [-D] [-H host] [-p port] [-U] [-s limit] <kbname>\n", basename(argv[0]));
-    fprintf(stderr, "       -H   specify host to listen on\n");
-    fprintf(stderr, "       -p   specify port to listen on\n");
-    fprintf(stderr, "       -D   do not daemonise\n");
-    fprintf(stderr, "       -U   enable unsafe operations (eg. LOAD)\n");
-    fprintf(stderr, "       -d   enable SPARQL default graph support\n");
-    fprintf(stderr, "       -s   default soft limit (-1 to disable)\n");
+  if (help || optind >= argc || optind < argc - 1) {
+    fprintf(stdout, "Usage: %s [-D] [-H host] [-p port] [-U] [-s limit] <kbname>\n", basename(argv[0]));
+    fprintf(stdout, "       -H   specify host to listen on\n");
+    fprintf(stdout, "       -p   specify port to listen on\n");
+    fprintf(stdout, "       -D   do not daemonise\n");
+    fprintf(stdout, "       -U   enable unsafe operations (eg. LOAD)\n");
+    fprintf(stdout, "       -d   enable SPARQL default graph support\n");
+    fprintf(stdout, "       -s   default soft limit (-1 to disable)\n");
+    fprintf(stdout, "       -O   set query optimiser level (0-3, default is 3)\n");
+    fprintf(stdout, "       -X   enable public cross-origin resource sharing (CORS) support\n");
+    fprintf(stdout, "Options can also be set permenantly in /etc/4store.conf\n");
+    fprintf(stdout, "see http://4store.org/trac/wiki/SparqlServer for details\n");
 
-    return 1;
+    return help_return;
   }
 
   fsp_syslog_enable();
   kb_name = argv[optind];
 
+  /* read config file */
+
+  GKeyFile *keyfile = g_key_file_new();
+  GError *err = NULL;
+  const char *keyfile_filename = FS_CONFIG_FILE;
+  if (!g_key_file_load_from_file(keyfile, keyfile_filename, G_KEY_FILE_KEEP_COMMENTS, &err)) {
+    if (err->code != G_FILE_ERROR_NOENT &&
+        err->code != G_FILE_ERROR_EXIST &&
+        err->code != G_FILE_ERROR_ISDIR) {
+      g_error("%s(%d) reading %s", err->message, err->code, keyfile_filename);
+
+      return 1;
+    }
+    g_error_free(err);
+    err = NULL;
+  } else {
+    set_boolean(keyfile, kb_name, "unsafe", &unsafe);
+
+    set_boolean(keyfile, kb_name, "cors", &cors_support);
+
+    set_boolean(keyfile, kb_name, "default-graph", &default_graph);
+
+    set_string(keyfile, kb_name, "port", &port);
+
+    set_string(keyfile, kb_name, "listen", &host);
+
+    if (soft_limit == 0) {
+      const char *soft_limit_str = NULL;
+      set_string(keyfile, kb_name, "soft-limit", &soft_limit_str);
+      if (soft_limit_str) {
+        soft_limit = atoi(soft_limit_str);
+        if (soft_limit == 0) {
+          soft_limit = -1;
+        }
+      }
+    }
+
+    if (opt_level == -1) {
+      const char *opt_level_str = NULL;
+      set_string(keyfile, kb_name, "opt-level", &opt_level_str);
+      if (opt_level_str) {
+        opt_level = atoi(opt_level_str);
+      }
+    }
+  }
+
+  /* handle defaults */
+
+  if (cors_support == -1) {
+    cors_support = 0;
+  }
+  if (opt_level == -1) {
+    opt_level = 3;
+  }
+  if (!port) {
+    port = "8080";
+  }
   int srv = server_setup(daemonize, host, port);
   if (srv < 0) {
     return 2;
@@ -1700,8 +1852,17 @@ int main(int argc, char *argv[])
   if (unsafe) {
     fs_error(LOG_INFO, "unsafe operations enabled");
   }
+  if (cors_support) {
+    fs_error(LOG_INFO, "CORS support enabled");
+  }
+  if (default_graph) {
+    fs_error(LOG_INFO, "Default graph support enabled");
+  }
+  if (opt_level != 3) {
+    fs_error(LOG_INFO, "Setting query optimiser level to %d", opt_level);
+  }
 
-  pid_t cpid, wpid;
+  pid_t wpid;
   do {
     int status;
     cpid = create_child(srv, kb_name, password);
@@ -1712,3 +1873,51 @@ int main(int argc, char *argv[])
 
   return 0;
 }
+
+static void set_boolean(GKeyFile *keyfile, const char *kb_name, const char *key, int *set)
+{
+  GError *err = NULL;
+  gboolean b = g_key_file_get_boolean(keyfile, kb_name, key, &err);
+  if (err) {
+    g_error_free(err);
+    err = NULL;
+    b = g_key_file_get_boolean(keyfile, "default", key, &err);
+    if (err) {
+      g_error_free(err);
+      err = NULL;
+    } else {
+      if (b) {
+        *set = 1;
+      } else {
+        *set = 0;
+      }
+    }
+  } else {
+    if (b) {
+      *set = 1;
+    } else {
+      *set = 0;
+    }
+  }
+}
+
+static void set_string(GKeyFile *keyfile, const char *kb_name, const char *key, const char **set)
+{
+  GError *err = NULL;
+  char *s = g_key_file_get_string(keyfile, kb_name, key, &err);
+  if (err) {
+    g_error_free(err);
+    err = NULL;
+    s = g_key_file_get_string(keyfile, "default", key, &err);
+    if (err) {
+      g_error_free(err);
+      err = NULL;
+    } else {
+      *set = s;
+    }
+  } else {
+    *set = s;
+  }
+}
+
+/* vi:set expandtab sts=2 sw=2: */

@@ -1,3 +1,5 @@
+#ifndef _4SR_COMM_H  /* duplication check */
+#define _4SR_COMM_H
 
 #include "common/datatypes.h"
 
@@ -40,3 +42,4 @@ fs_rid_vector **msg_to_mtrx(unsigned char *msg);
 unsigned char *reasoner_recv(int conn,unsigned int* bytes_read);
 unsigned char * list_integer_msg(int type,GList *list);
 
+#endif

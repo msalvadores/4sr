@@ -24,24 +24,27 @@
 #include <string.h>
 #include <glib.h>
 #include <rasqal.h>
+#include <libgen.h>
 
 #include "query.h"
 #include "query-datatypes.h"
 #include "optimiser.h"
-#include "common/4store.h"
-#include "common/datatypes.h"
-#include "common/params.h"
-#include "common/hash.h"
-#include "common/error.h"
-#include "common/rdf-constants.h"
+#include "../common/4store.h"
+#include "../common/datatypes.h"
+#include "../common/params.h"
+#include "../common/hash.h"
+#include "../common/error.h"
+#include "../common/rdf-constants.h"
+#include "../common/gnu-options.h"
 
 int main(int argc, char *argv[])
 {
+    fs_gnu_options(argc, argv, "<kbname> <noop|freq>\n");
+
     char *password = fsp_argv_password(&argc, argv);
 
     if (argc != 3) {
-        fprintf(stderr, "%s revision %s\n", argv[0], FS_FRONTEND_VER);
-        fprintf(stderr, "Usage: %s <kbname> <noop|freq>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <kbname> <noop|freq>\n", basename(argv[0]));
         return 1;
     }
 
@@ -66,7 +69,7 @@ int main(int argc, char *argv[])
 
         return 0;
     } else if (!strcmp(argv[2], "freq")) {
-        fs_query_state *qs = fs_query_init(link);
+        fs_query_state *qs = fs_query_init(link, NULL, NULL);
         fs_optimiser_freq_print(qs);
     }
 

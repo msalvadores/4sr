@@ -1,7 +1,7 @@
 #ifndef IMPORT_H
 #define IMPORT_H
 
-#include "common/4store.h"
+#include "../common/4store.h"
 
 #define FS_DRYRUN_DELETE    0x01
 #define FS_DRYRUN_RESOURCES 0x02
@@ -17,5 +17,7 @@ int fs_import_stream_start(fsp_link *link, const char *model_uri, const char *mi
 int fs_import_stream_data(fsp_link *link, unsigned char *data, size_t count);
 int fs_import_stream_finish(fsp_link *link, int *count, int *errors);
 void fs_import_reread_config();
+
+fs_rid fs_bnode_id(fsp_link *link, raptor_term_blank_value blank);
 
 #endif

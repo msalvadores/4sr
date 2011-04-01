@@ -1,3 +1,5 @@
+#ifndef _4SR_QUERY_H  /* duplication check */
+#define _4SR_QUERY_H
 
 #include "common/4store.h"
 
@@ -19,3 +21,5 @@ fs_rid_vector **rdfs_subproperty_stmts(fsp_link *link);
 fs_rid_vector **rdfs_range_stmts(fsp_link *link);
 fs_rid_vector **rdfs_domain_stmts(fsp_link *link);
 void print_binding(fs_rid_vector **b,int cols);
+
+#endif

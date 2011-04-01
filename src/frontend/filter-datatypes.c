@@ -27,8 +27,9 @@
 
 #include "filter.h"
 #include "filter-datatypes.h"
-#include "common/hash.h"
-#include "common/error.h"
+#include "query-data.h"
+#include "../common/hash.h"
+#include "../common/error.h"
 
 fs_value fs_value_blank()
 {
@@ -93,6 +94,7 @@ fs_value fs_value_uri(const char *s)
     v.rid = fs_hash_uri(s);
     v.lex = (char *)s;
     v.valid = fs_valid_bit(FS_V_RID);
+    v.attr = FS_RID_NULL;
 
     return v;
 }
@@ -113,6 +115,19 @@ fs_value fs_value_plain_with_lang(const char *s, const char *l)
 	v.attr = fs_c.empty;
     } else {
 	v.attr = fs_hash_literal(l, 0);
+    }
+    v.lex = (char *)s;
+
+    return v;
+}
+
+fs_value fs_value_plain_with_dt(const char *s, const char *d)
+{
+    fs_value v = fs_value_blank();
+    if (!d || *d == '\0') {
+	v.attr = fs_c.empty;
+    } else {
+	v.attr = fs_hash_uri(d);
     }
     v.lex = (char *)s;
 
@@ -214,40 +229,28 @@ fs_value fs_value_datetime_from_string(const char *s)
     fs_value v = fs_value_blank();
     v.attr = fs_c.xsd_datetime;
 
-    struct tm td, tz;
+    struct tm td;
+
     memset(&td, 0, sizeof(struct tm));
-    memset(&tz, 0, sizeof(struct tm));
 
-    char *ret = strptime(s, "%Y-%m-%dT%H:%M:%S", &td);
-    if (ret) {
-	if (*ret) {
-	    if (strptime(ret, "+%H%M", &tz)) {
-		tz.tm_hour *= -1;
-		tz.tm_min *= -1;
-	    } else if (strptime(ret, "+%H:%M", &tz)) {
-		tz.tm_hour *= -1;
-		tz.tm_min *= -1;
-	    } else if (strptime(ret, "-%H%M", &tz)) {
-		/* values are fine */
-	    } else if (strptime(ret, "-%H:%M", &tz)) {
-		/* values are fine */
-	    }
-	}
-	v.valid = fs_valid_bit(FS_V_IN);
-	v.in = timegm(&td) + tz.tm_hour * 3600 + tz.tm_min * 60;
+    GTimeVal gtime;
+    if (g_time_val_from_iso8601(s, &gtime)) {
+        v.in = gtime.tv_sec;
+        v.valid = fs_valid_bit(FS_V_IN);
+        v.lex = (char *)s;
 
-	return v;
+        return v;
     }
-    ret = strptime(s, "%Y-%m-%d", &td);
+    char *ret = strptime(s, "%Y-%m-%d", &td);
     if (ret) {
-	v.valid = fs_valid_bit(FS_V_IN);
 	v.in = timegm(&td);
+	v.valid = fs_valid_bit(FS_V_IN);
 
 	return v;
     }
 
     return fs_value_error(FS_ERROR_INVALID_TYPE,
-	    "cannot convert value to xsd:datetime");
+	    "cannot convert value to xsd:dateTime");
 }
 
 fs_value fs_value_error(fs_error e, const char *msg)
@@ -362,6 +365,21 @@ int fs_is_error(fs_value a)
     return 0;
 }
 
+int fs_is_plain_or_string(fs_value v)
+{
+    if (fs_is_error(v)) {
+        return 0;
+    }
+    if (FS_IS_BNODE(v.rid) || FS_IS_URI(v.rid)) {
+        return 0;
+    }
+    if (v.attr != fs_c.empty && v.attr != fs_c.xsd_string) {
+        return 0;
+    }
+
+    return 1;
+}
+
 int fs_value_is_true(fs_value a)
 {
     if (a.attr == fs_c.xsd_boolean) {
@@ -450,9 +468,12 @@ void fs_value_print(fs_value v)
             printf("plain");
 	}
     } else {
-	printf("0x%llx", v.attr);
+	printf("attr:%llx", v.attr);
     }
 
+    if (v.valid & fs_valid_bit(FS_V_RID)) {
+	printf(" rid:%llx", v.rid);
+    }
     if (v.lex) {
 	printf(" l:%s", v.lex);
     }
@@ -467,6 +488,65 @@ void fs_value_print(fs_value v)
     if (v.valid & fs_valid_bit(FS_V_IN)) {
 	printf(" i:%lld", (long long)v.in);
     }
+}
+
+fs_value fs_value_fill_lexical(fs_query *q, fs_value a)
+{
+    if (a.lex) {
+	return a;
+    }	
+    if (a.valid & fs_valid_bit(FS_V_FP)) {
+	a.lex = g_strdup_printf("%f", a.fp);
+        fs_query_add_freeable(q, a.lex);
+
+	return a;
+    }
+    if (a.valid & fs_valid_bit(FS_V_DE)) {
+	a.lex = fs_decimal_to_lex(&a.de);
+        fs_query_add_freeable(q, a.lex);
+
+	return a;
+    }
+    if (a.valid & fs_valid_bit(FS_V_IN)) {
+	if (a.attr == fs_c.xsd_integer) {
+	    a.lex = g_strdup_printf("%lld", (long long)a.in);
+            fs_query_add_freeable(q, a.lex);
+
+	    return a;
+	}
+
+	if (a.attr == fs_c.xsd_datetime) {
+	    struct tm t;
+	    time_t clock = a.in;
+	    gmtime_r(&clock, &t);
+	    a.lex = g_strdup_printf("%04d-%02d-%02dT%02d:%02d:%02d", 
+		    t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+		    t.tm_hour, t.tm_min, t.tm_sec);
+            fs_query_add_freeable(q, a.lex);
+
+	    return a;
+	}
+    }
+
+    return fs_value_error(FS_ERROR_INVALID_TYPE, "bad lexical cast");
+}
+
+fs_value fs_value_fill_rid(fs_query *q, fs_value a)
+{
+    if (a.valid & fs_valid_bit(FS_V_RID)) {
+        return a;
+    }
+
+    if (a.valid & fs_valid_bit(FS_V_TYPE_ERROR)) {
+        a.rid = FS_RID_NULL;
+    }
+
+    fs_value_fill_lexical(q, a);
+
+    a.rid = fs_hash_literal(a.lex, a.attr);
+    a.valid |= fs_valid_bit(FS_V_RID);
+
+    return a;
 }
 
 /* vi:set expandtab sts=4 sw=4: */

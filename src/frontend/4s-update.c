@@ -18,13 +18,16 @@
 #include <raptor.h>
 #include <rasqal.h>
 
+#include "query.h"
 #include "update.h"
-#include "common/hash.h"
-#include "common/error.h"
+#include "../common/hash.h"
+#include "../common/error.h"
+#include "../common/gnu-options.h"
 
 int main(int argc, char *argv[])
 {
-#if RASQAL_VERSION > 917
+    fs_gnu_options(argc, argv, "<kb-name> <sparql-update-request>\n");
+
     if (argc != 3) {
         printf("Usage: %s <kb-name> <sparql-update-request>\n", argv[0]);
 
@@ -40,19 +43,19 @@ int main(int argc, char *argv[])
       return 2;
     }
 
-    raptor_init();
     fs_hash_init(fsp_hash_type(link));
 
+    fs_query_state *qs = fs_query_init(link, NULL, NULL);
     char *message = NULL;
-    int ret = fs_update(link, argv[2], &message, TRUE);
-    if (message) printf("%s\n", message);
+    int ret = fs_update(qs, argv[2], &message, TRUE);
+    if (message) {
+        printf("%s\n", message);
+        g_free(message);
+    }
+    fsp_close_link(link);
+    fs_query_fini(qs);
 
     return ret;
-#else
-    fprintf(stderr, "%s requires rasqal > 0.9.17 to work\n", argv[0]);
-
-    return 1;
-#endif
 }
 
 /* vi:set expandtab sts=4 sw=4: */

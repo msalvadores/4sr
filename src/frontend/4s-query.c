@@ -25,37 +25,25 @@
 #include <glib.h>
 #include <rasqal.h>
 #include <getopt.h>
+#include <libgen.h>
 #include <sys/time.h>
 
-#ifdef USE_LIBEDIT
-#include <editline/readline.h>
-#else
 #include <readline/readline.h>
 #include <readline/history.h>
-#endif
 
+#include "4store-config.h"
 #include "query.h"
 #include "query-cache.h"
 #include "results.h"
 #include "query-datatypes.h"
-#include "common/4store.h"
-#include "common/datatypes.h"
-#include "common/params.h"
-#include "common/hash.h"
-#include "common/error.h"
+#include "../common/4store.h"
+#include "../common/datatypes.h"
+#include "../common/params.h"
+#include "../common/hash.h"
+#include "../common/error.h"
 
-static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_levelo, int result_flags, int soft_limit
-    #if defined(USE_REASONER)
-    ,int no_reasoner);
-    #else
-    );
-    #endif
-static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit
-    #if defined(USE_REASONER)
-    ,int no_reasoner);
-    #else
-    );
-    #endif
+static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_levelo, int result_flags, int soft_limit,raptor_world *rw, int no_reasoner);
+static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit,raptor_world *rw,int no_reasoner);
 
 static int show_timing;
 
@@ -74,12 +62,8 @@ int main(int argc, char *argv[])
     //fprintf(stderr, "MDNS SERVICE_TYPE  %s\n", SERVICE_TYPE);
     char *password = fsp_argv_password(&argc, argv);
 
-    #if defined(USE_REASONER)  
-    static char *optstring = "hvf:PO:Ib:rs:dn";
+    static char *optstring = "hevf:PO:Ib:rs:dn";
     int no_reasoner = 0;
-    #else
-    static char *optstring = "hvf:PO:Ib:rs:d";
-    #endif
     char *format = getenv("FORMAT");
     char *kb_name = NULL, *query = NULL;
     int programatic = 0, help = 0;
@@ -89,12 +73,16 @@ int main(int argc, char *argv[])
     int insert_mode = 0;
     int restricted = 0;
     int soft_limit = 0;
+    int explain = 0;
     int default_graph = 0;
     char *base_uri = "local:";
+    raptor_world *rw = NULL;
 
     static struct option long_options[] = {
         { "help", 0, 0, 'h' },
+        { "version", 0, 0, 'V' },
         { "verbose", 0, 0, 'v' },
+        { "explain", 0, 0, 'e' },
         { "format", 1, 0, 'f' },
         { "programatic", 0, 0, 'P' },
         { "opt-level", 1, 0, 'O' },
@@ -103,16 +91,14 @@ int main(int argc, char *argv[])
         { "soft-limit", 1, 0, 's' },
         { "default-graph", 0, 0, 'd' },
         { "base", 1, 0, 'b' },
-        #if defined(USE_REASONER)  
         { "no-reasoner", 0, 0, 'n' },
-        #endif
         { 0, 0, 0, 0 }
     };
 
+    int help_return = 1;
+
     while ((c = getopt_long (argc, argv, optstring, long_options, &opt_index)) != -1) {
-        if (c == 'h') {
-            help = 1;
-        } else if (c == 'f') {
+        if (c == 'f') {
             format = optarg;
         } else if (c == 'P') {
             programatic = TRUE;
@@ -130,14 +116,22 @@ int main(int argc, char *argv[])
             default_graph = 1;
         } else if (c == 'b') {
             base_uri = optarg;
-        #if defined(USE_REASONER)  
         } else if (c == 'n') {
             no_reasoner = 1;
-        #endif
+        } else if (c == 'h') {
+            help = 1;
+            help_return = 0;
+        } else if (c == 'e') {
+            explain = 1;
+        } else if (c == 'V') {
+            printf("%s, built for 4store %s\n", argv[0], GIT_REV);
+            exit(0); 
         } else {
             help = 1;
         }
     }
+
+    if (!no_reasoner) opt_level = 0;
 
     for (int k = optind; k < argc; ++k) {
         if (!kb_name) {
@@ -151,25 +145,24 @@ int main(int argc, char *argv[])
 
     if (help || !kb_name) {
       char *langs = "";
-      if (fq_query_have_laqrs()) {
+      if (fs_query_have_laqrs()) {
         langs = "/LAQRS";
       }
-      fprintf(stderr, "%s revision %s\n", argv[0], FS_FRONTEND_VER);
-      fprintf(stderr, "Usage: %s <kbname> [-f format] [-O opt-level] [-I] [-b uri] [query]\n", argv[0]);
-      fprintf(stderr, "   or: %s <kbname> -P\n", argv[0]);
-      fprintf(stderr, " query is a SPARQL%s query, remember to use"
+      fprintf(stdout, "%s revision %s\n", basename(argv[0]), GIT_REV);
+      fprintf(stdout, "Usage: %s <kbname> [-f format] [-O opt-level] [-I] [-b uri] [query]\n", argv[0]);
+      fprintf(stdout, "   or: %s <kbname> -P\n", basename(argv[0]));
+      fprintf(stdout, " query is a SPARQL%s query, remember to use"
                       " shell quoting if necessary\n", langs);
-      fprintf(stderr, " -f              Output format one of, sparql, text, json, or testcase\n");
-      fprintf(stderr, " -O, --opt-level Set optimisation level, range 0-3\n");
-      fprintf(stderr, " -I, --insert    Interpret CONSTRUCT statements as inserts\n");
-      fprintf(stderr, " -r, --restricted  Enable query complexity restriction\n");
-      fprintf(stderr, " -s, --soft-limit  Override default soft limit on search breadth\n");
-      fprintf(stderr, " -d, --default-graph  Enable SPARQL default graph support\n");
-    #if defined(USE_REASONER)  
+      fprintf(stdout, " -f              Output format one of, sparql, text, json, or testcase\n");
+      fprintf(stdout, " -O, --opt-level Set optimisation level, range 0-3\n");
+      fprintf(stdout, " -I, --insert    Interpret CONSTRUCT statements as inserts\n");
+      fprintf(stdout, " -r, --restricted  Enable query complexity restriction\n");
+      fprintf(stdout, " -s, --soft-limit  Override default soft limit on search breadth\n");
+      fprintf(stdout, " -d, --default-graph  Enable SPARQL default graph support\n");
+      fprintf(stdout, " -b, --base      Set base URI for query\n");
       fprintf(stderr, " -n, --no-reasoner  disables the RDFS reasoner\n");
-    #endif
-      fprintf(stderr, " -b, --base      Set base URI for query\n");
-      return 1;
+
+      exit(help_return);
     }
 
     if (programatic || query) {
@@ -207,53 +200,33 @@ int main(int argc, char *argv[])
       return 2;
     }
 
-    raptor_init();
-#ifndef HAVE_RASQAL_WORLD
-    rasqal_init();
-#endif /* ! HAVE_RASQAL_WORLD */
+    rw = raptor_new_world();
     fs_hash_init(fsp_hash_type(link));
 
-    raptor_uri *bu = raptor_new_uri((unsigned char *)base_uri);
+    raptor_uri *bu = raptor_new_uri(rw, (unsigned char *)base_uri);
 
-    int flags = 0;
+    unsigned int flags = FS_QUERY_CONSOLE_OUTPUT; /* signal that we're using the */
+                             /* console, allows better explain functionality */
     flags |= insert_mode ? FS_RESULT_FLAG_CONSTRUCT_AS_INSERT : 0;
     flags |= restricted ? FS_QUERY_RESTRICTED : 0;
     flags |= default_graph ? FS_QUERY_DEFAULT_GRAPH : 0;
 
     if (programatic) {
 	programatic_io(link, bu, "sparql", format, timing, verbosity, opt_level,
-            FS_RESULT_FLAG_HEADERS | flags, soft_limit
-    #if defined(USE_REASONER)
-    ,no_reasoner);
-    #else
-    );
-    #endif
+            FS_RESULT_FLAG_HEADERS | flags, soft_limit , rw,no_reasoner);
     } else if (!query) {
         if (!format) format = "text";
         interactive(link, bu, format, verbosity, opt_level,
-            insert_mode ? FS_RESULT_FLAG_CONSTRUCT_AS_INSERT : flags, soft_limit
-    #if defined(USE_REASONER)
-    ,no_reasoner);
-    #else
-    );
-    #endif
+            insert_mode ? FS_RESULT_FLAG_CONSTRUCT_AS_INSERT : flags, soft_limit, rw, no_reasoner);
     }
 
     int ret = 0;
 
-    fs_query_state *qs = fs_query_init(link);
-    if (show_timing)
-        then = fs_time();
-    GTimer* tquery = g_timer_new ();
-    fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit
-    #if defined(USE_REASONER)
-    ,no_reasoner);
-    #else
-    );
-    #endif
-    gulong microseconds = 0;
-    gdouble qtime = g_timer_elapsed(tquery,&microseconds);
-    //printf("query time %.5f \n",qtime);
+    fs_query_state *qs = fs_query_init(link, NULL, NULL);
+    qs->verbosity = verbosity;
+    
+    fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit, explain, no_reasoner);
+    
     if (fs_query_errors(qr)) {
         ret = 1;
     }
@@ -282,10 +255,7 @@ int main(int argc, char *argv[])
     }
 
     raptor_free_uri(bu);
-    raptor_finish();
-#ifndef HAVE_RASQAL_WORLD
-    rasqal_finish();
-#endif /* ! HAVE_RASQAL_WORLD */
+    raptor_free_world(rw);
 
     fs_query_cache_flush(qs, verbosity);
     fs_query_fini(qs);
@@ -297,19 +267,15 @@ int main(int argc, char *argv[])
 
 #define MAX_Q_SIZE 1000000
 
-static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit
-#if defined(USE_REASONER)  
-,int no_reasoning)
-#else
-)
-#endif
+static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit, raptor_world *rw, int no_reasoning)
 {
     char query[MAX_Q_SIZE];
     char *pos;
     char *newl;
 
     const int segments = fsp_link_segments(link);
-    fs_query_state *qs = fs_query_init(link);
+    fs_query_state *qs = fs_query_init(link, NULL, NULL);
+    qs->verbosity = verbosity;
 
     do {
 	pos = query;
@@ -329,14 +295,9 @@ static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lan
                 then = fs_time();
                 printf("Q: %s\n", query);
             }
-	    fs_query *tq = fs_query_execute(qs, link, bu, query,
-		    result_flags, opt_level, soft_limit
-#if defined(USE_REASONER)  
-,no_reasoning);
-#else
-);
-#endif
-	    fs_query_results_output(tq, result_format, 0, stdout);
+	    fs_query *tq = fs_query_execute(qs, link, bu, query,result_flags, opt_level, soft_limit, 0, no_reasoning);
+	    
+        fs_query_results_output(tq, result_format, 0, stdout);
             if (show_timing) {
                 printf(" time: %f s\n", fs_time() - fs_query_start_time(tq));
                 printf("seg bind\t(secs)\t\tprice\t(secs)\t\tresolve\t(secs)\t\twait (secs)\n");
@@ -389,17 +350,13 @@ static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lan
 
     raptor_free_uri(bu);
     fsp_close_link(link);
-    raptor_finish();
-#ifndef HAVE_RASQAL_WORLD
-    rasqal_finish();
-#endif /* ! HAVE_RASQAL_WORLD */
+    raptor_free_world(rw);
 
     fs_query_cache_flush(qs, verbosity);
     fs_query_fini(qs);
 
     exit(0);
 }
-
 
 static char **resource_completion (const char *text, int start, int end)
 {
@@ -424,12 +381,7 @@ static void save_history_dotfile(void)
     g_free(dotfile);
 }
 
-static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_level, int result_flags, int soft_limit
-#if defined(USE_REASONER)  
-,int no_reasoning)
-#else
-)
-#endif
+static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_level, int result_flags, int soft_limit, raptor_world *rw, int no_reasoning)
 {
     char *query = NULL;
 
@@ -437,7 +389,8 @@ static void interactive(fsp_link *link, raptor_uri *bu, const char *result_forma
     load_history_dotfile();
     rl_attempted_completion_function = resource_completion;
 
-    fs_query_state *qs = fs_query_init(link);
+    fs_query_state *qs = fs_query_init(link, NULL, NULL);
+    qs->verbosity = verbosity;
 
     do {
 	/* assemble query string */
@@ -473,13 +426,11 @@ static void interactive(fsp_link *link, raptor_uri *bu, const char *result_forma
             if (show_timing) {
                 then = fs_time();
             }
-	    fs_query *tq = fs_query_execute(qs, link, bu, query,
-		    result_flags, opt_level, soft_limit
-#if defined(USE_REASONER)  
-,no_reasoning);
-#else
-);
-#endif
+	    fs_query *tq = fs_query_execute(qs, link, bu, query,result_flags, opt_level, soft_limit,0,no_reasoning);
+            if (show_timing) {
+                double now = fs_time();
+                printf("# bind time %.3fs\n", now-then);
+            }
 	    fs_query_results_output(tq, result_format, 0, stdout);
 	    fs_query_free(tq);
 	    if (result_format && !strcmp(result_format, "sparql")) {
@@ -502,10 +453,7 @@ static void interactive(fsp_link *link, raptor_uri *bu, const char *result_forma
 
     raptor_free_uri(bu);
     fsp_close_link(link);
-    raptor_finish();
-#ifndef HAVE_RASQAL_WORLD
-    rasqal_finish();
-#endif /* ! HAVE_RASQAL_WORLD */
+    raptor_free_world(rw);
 
     save_history_dotfile();
 

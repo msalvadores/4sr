@@ -27,10 +27,10 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#include "common/timing.h"
-#include "common/datatypes.h"
-#include "common/error.h"
-#include "common/hash.h"
+#include "../common/timing.h"
+#include "../common/datatypes.h"
+#include "../common/error.h"
+#include "../common/hash.h"
 #include "tlist.h"
 #include "backend.h"
 #include "backend-intl.h"
@@ -183,6 +183,9 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
     int reasoner_bind = (tobind & REASONER_BIND_OP);
     int do_rdfs = !reasoner_bind && be->reasoner;
+    #ifdef DEBUG_RDFS
+     fs_error(LOG_ERR, "segment %i do_rdfs[%d] reasoner_bind[%d] be->reasoner[%p]",segment,do_rdfs,reasoner_bind,be->reasoner);
+    #endif
     double then = fs_time();
 
     limit = (limit == -1) ? INT_MAX : limit;
@@ -388,7 +391,11 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
    fs_rid_vector *pre_objects = NULL;
 
 
-   int do_rd = 1;
+   int do_rd = 0;
+   #ifdef FS_RDFS_DOMRAN
+   do_rd = 1;
+   #endif
+
    GHashTable* preds_by_sub = NULL;
 
    int domain_done = 0;

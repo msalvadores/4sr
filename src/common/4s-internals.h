@@ -1,3 +1,4 @@
+#include "4store-config.h"
 #include "4store.h"
 #include "params.h"
 

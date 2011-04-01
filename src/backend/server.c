@@ -18,11 +18,11 @@
  *  Copyright 2006 Nick Lamb for Garlik.com
  */
 
-#include "common/4store.h"
-#include "common/hash.h"
-#include "common/error.h"
-#include "common/params.h"
-#include "common/md5.h"
+#include "../common/4store.h"
+#include "../common/hash.h"
+#include "../common/error.h"
+#include "../common/params.h"
+#include "../common/md5.h"
 #include "backend.h"
 #include "backend-intl.h"
 #include "query-backend.h"
@@ -42,12 +42,10 @@
 
 #include "lock.h"
 
-#if defined(USE_REASONER)
 #include "reasoner/4s-reasoner-backend.h" 
 #include <arpa/inet.h>
 #ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX _POSIX_HOST_NAME_MAX
-#endif
 #endif
 
 #define PAD " "
@@ -241,11 +239,7 @@ static unsigned char * handle_delete_models (fs_backend *be, fs_segment segment,
 
   fs_delete_models(be, segment, &models);
 
-  #if defined(USE_REASONER)
-  if (be->reasoner) {
-  notify_import_finished(be->reasoner);
-  }
-  #endif
+  notify_import_finished(be);
 
   return message_new(FS_DONE_OK, segment, 0);
 }
@@ -327,11 +321,7 @@ static unsigned char * handle_stop_import (fs_backend *be, fs_segment segment,
     return fsp_error_new(segment, "insert failed");
   }
   
-  #if defined(USE_REASONER)
-  if (be->reasoner) {
-  notify_import_finished(be->reasoner);
-  }
-  #endif
+  notify_import_finished(be);
 
   return message_new(FS_DONE_OK, segment, 0);
 }
@@ -377,6 +367,8 @@ static unsigned char * handle_delete_quads (fs_backend *be, fs_segment segment,
   fs_rid_vector *args[4] = { &models, &subjects, &predicates, &objects };
   fs_delete_quads(be, args);
   /* FIXME, should check return value */
+
+  notify_import_finished(be);
 
   return message_new(FS_DONE_OK, 0, 0);
 }
@@ -950,6 +942,7 @@ static unsigned char * handle_resolve_attr (fs_backend *be, fs_segment segment,
 /* ASCII NUL is used to terminate strings on the wire */
     if (resources[k].lex) {
       strcpy((char *) record + 20, resources[k].lex);
+      free(resources[k].lex);
     } else {
       *(record + 20) = '\0';
     }
@@ -1113,8 +1106,7 @@ fsp_backend native_backend = {
 
 int main (int argc, char *argv[])
 {
-  
-  fprintf(stderr, "MDNS SERVICE_TYPE  %s\n", SERVICE_TYPE);
+  //fprintf(stderr, "MDNS SERVICE_TYPE  %s\n", SERVICE_TYPE);
   char *kb_name;
   int daemon = 1;
   int help = 0;
@@ -1124,20 +1116,16 @@ int main (int argc, char *argv[])
 
   int c, opt_index=0;
   
-  #if defined(USE_REASONER)
   static const char *optstr = "Dl:r:";
   char *reasoner=NULL;
   int reasoner_flag = 0;
-  #else
-  static const char *optstr = "Dl:";
-  #endif
 
   static struct option longopt[] = {
     { "daemon", 0, 0, 'D' },
-    #if defined(USE_REASONER)
     { "reasoner",optional_argument, 0, 'r' },
-    #endif
     { "limit", 1, 0, 'l' },
+    { "help", 0, 0, 'h' },
+    { "version", 0, 0, 'v' },
     { 0, 0, 0, 0 }
   };
 
@@ -1147,6 +1135,8 @@ int main (int argc, char *argv[])
     disk_limit = atof(getenv("DISK_LIMIT"));
   }
 
+  int help_return = 1;
+
   while (( c = getopt_long(argc, argv, optstr, longopt, &opt_index)) != -1) {
     switch (c) {
     case 'D':
@@ -1155,12 +1145,18 @@ int main (int argc, char *argv[])
     case 'l':
       disk_limit = atof(optarg);
       break;
-    #if defined(USE_REASONER)
     case 'r':
         reasoner_flag = 1;
         reasoner = optarg;
         break;
-    #endif
+    case 'h':
+      help_return = 0;
+      help = 1;
+      break;
+    case 'v':
+      printf("4s-backend, built for 4store %s\n", GIT_REV);
+      exit(0);
+      break;
     default:
       help = 1;
       break;
@@ -1172,10 +1168,10 @@ int main (int argc, char *argv[])
   }
 
   if (help) {
-    fprintf(stderr, "%s revision %s\n", argv[0], FS_BACKEND_VER);
-    fprintf(stderr, "Usage: %s [-D,--deamon] [-l,--limit min-free-space] <kbname>\n", argv[0]);
-    fprintf(stderr, "       env. var. FS_DISK_LIMIT also controls min free disk\n");
-    return 1;
+    fprintf(stdout, "%s revision %s\n", argv[0], FS_BACKEND_VER);
+    fprintf(stdout, "Usage: %s [-D,--deamon] [-l,--limit min-free-space] <kbname>\n", argv[0]);
+    fprintf(stdout, "       env. var. FS_DISK_LIMIT also controls min free disk\n");
+    return help_return;
   }
 
   kb_name = argv[argc - 1];
@@ -1184,22 +1180,16 @@ int main (int argc, char *argv[])
     return 1;
   }
   
-  #if defined(USE_REASONER)
   if (reasoner_flag && !reasoner) {
     char host_name[HOST_NAME_MAX + 1];
     gethostname(host_name, HOST_NAME_MAX);
     reasoner = host_name;
   }
   fsp_serve(kb_name, &native_backend, daemon, disk_limit,reasoner);
-  #else
-  fsp_serve(kb_name, &native_backend, daemon, disk_limit);
-  #endif
 
   return 2; /* fsp_serve returns only if there is an error */
 }
 
-#if defined(USE_REASONER)
 void set_reasoner(fsp_backend *backend,fs_backend *be) {
     be->reasoner = backend->reasoner;
 }
-#endif

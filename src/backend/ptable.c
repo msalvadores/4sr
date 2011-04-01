@@ -27,12 +27,12 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 
-#include "common/timing.h"
+#include "../common/timing.h"
 
 #include "backend.h"
 #include "ptable.h"
-#include "common/params.h"
-#include "common/error.h"
+#include "../common/params.h"
+#include "../common/error.h"
 
 #define PTABLE_ID 0x4a585430 /* JXT0 */
 #define PTABLE_REVISION 1
@@ -400,7 +400,8 @@ int fs_ptable_pair_exists(fs_ptable *pt, fs_row_id b, fs_rid pair[2])
     return 0;
 }
 
-fs_row_id fs_ptable_remove_pair(fs_ptable *pt, fs_row_id b, fs_rid pair[2], int *removed)
+/* we add models to the models set, if the matching RID is set to a wildcard */
+fs_row_id fs_ptable_remove_pair(fs_ptable *pt, fs_row_id b, fs_rid pair[2], int *removed, fs_rid_set *models)
 {
     fs_row_id ret = b;
 
@@ -415,12 +416,45 @@ fs_row_id fs_ptable_remove_pair(fs_ptable *pt, fs_row_id b, fs_rid pair[2], int 
         return ret;
     }
 
+    /* NULL, NULL means remove everything */
+    if (pair[0] == FS_RID_NULL && pair[1] == FS_RID_NULL) {
+        /* loop over the chain, count length, remove entries, and set all
+         * models to be marked as sparse */
+        while (b != 0) {
+            (*removed)++;
+            row *r = &(pt->data[b]);
+            if (models) {
+                fs_rid_set_add(models, r->data[0]);
+            }
+            fs_row_id nextb = r->cont;
+            fs_ptable_free_row(pt, b);
+            b = nextb;
+        }
+
+        return 0;
+    }
+
     row *prevr = NULL;
     while (b != 0) {
         row *r = &(pt->data[b]);
         fs_row_id nextb = r->cont;
         if (pair[0] != FS_RID_NULL && pair[1] == FS_RID_NULL) {
             if (r->data[0] == pair[0]) {
+                if (prevr) {
+                    prevr->cont = nextb;
+                } else {
+                    ret = nextb;
+                }
+                fs_ptable_free_row(pt, b);
+                (*removed)++;
+            } else {
+                prevr = r;
+            }
+        } else if (pair[0] == FS_RID_NULL && pair[1] != FS_RID_NULL) {
+            if (r->data[1] == pair[1]) {
+                if (models) {
+                    fs_rid_set_add(models, r->data[0]);
+                }
                 if (prevr) {
                     prevr->cont = nextb;
                 } else {

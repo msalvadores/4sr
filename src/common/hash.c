@@ -31,7 +31,6 @@
 #include <errno.h>
 
 #include "params.h"
-#include "md5.h"
 #include "umac.h"
 
 #include "error.h"
@@ -39,18 +38,9 @@
 #include "hash.h"
 #include "rdf-constants.h"
 
-/* hash function headers */
-fs_rid fs_hash_uri_md5(const char *str);
-fs_rid fs_hash_literal_md5(const char *str, fs_rid attr);
-fs_rid fs_hash_uri_crc64(const char *str);
-fs_rid fs_hash_literal_crc64(const char *str, fs_rid attr);
-fs_rid fs_hash_uri_umac(const char *str);
-fs_rid fs_hash_literal_umac(const char *str, fs_rid attr);
-
-fs_rid (*fs_hash_uri)(const char *str) = NULL;
-fs_rid (*fs_hash_literal)(const char *str, fs_rid attr) = NULL;
-
 static GHashTable *bnids = NULL;
+
+static umac_ctx_t umac_data = NULL;
 
 struct fs_globals fs_c;
 
@@ -63,16 +53,11 @@ void fs_hash_init(fsp_hash_enum type)
 {
     switch (type) {
     case FS_HASH_MD5:
-	fs_hash_uri = fs_hash_uri_md5;
-	fs_hash_literal = fs_hash_literal_md5;
+    case FS_HASH_CRC64:
+	fs_error(LOG_CRIT, "Unsuported backend hash function, exiting");
+	exit(4);
 	break;
     case FS_HASH_UMAC:
-	fs_hash_uri = fs_hash_uri_umac;
-	fs_hash_literal = fs_hash_literal_umac;
-	break;
-    case FS_HASH_CRC64:
-	fs_hash_uri = fs_hash_uri_crc64;
-	fs_hash_literal = fs_hash_literal_crc64;
 	break;
     case FS_HASH_UNKNOWN:
 	fs_error(LOG_CRIT, "Unknown backend hash function, exiting");
@@ -137,37 +122,11 @@ void fs_hash_fini()
 {
     g_hash_table_destroy(bnids);
     bnids = NULL;
-}
 
-#define POLY64REV     0x95AC9329AC4BC9B5ULL
-#define INITIAL_CRC    0xFFFFFFFFFFFFFFFFULL
-
-long long int crc64(const char *seq)
-{
-    unsigned long long crc = INITIAL_CRC;
-    static int init = 0;
-    static unsigned long long crc_table[256];
-    
-    if (!init) {
-	for (int i = 0; i < 256; i++) {
-	    long long int part = i;
-	    for (int j = 0; j < 8; j++) {
-		if (part & 1) {
-		    part = (part >> 1) ^ POLY64REV;
-		} else {
-		    part >>= 1;
-		}
-	    }
-	    crc_table[i] = part;
-	}
-	init = 1;
+    if (umac_data) {
+	umac_delete(umac_data);
+	umac_data = NULL;
     }
-    
-    while (*seq) {
-	crc = crc_table[(crc ^ *seq++) & 0xff] ^ (crc >> 8);
-    }
-
-    return crc;
 }
 
 fs_rid umac_wrapper(const char *str, fs_rid nonce_in)
@@ -177,7 +136,6 @@ fs_rid umac_wrapper(const char *str, fs_rid nonce_in)
     long long __attribute__((aligned(16))) data;
     long long __attribute__((aligned(16))) nonce = nonce_in;
 
-    static umac_ctx_t umac_data = NULL;
     if (!umac_data) {
 	umac_data = umac_new("\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0");
     }
@@ -210,9 +168,8 @@ fs_rid umac_wrapper(const char *str, fs_rid nonce_in)
     return data;
 }
 
-fs_rid fs_hash_uri_md5(const char *str)
+fs_rid fs_hash_uri(const char *str)
 {
-    md5_state_t md5;
     uint64_t top;
 
     if (!str) {
@@ -221,37 +178,14 @@ fs_rid fs_hash_uri_md5(const char *str)
     if (strncmp(str, "bnode:b", 7) == 0) {
 	fs_rid bnode_id = strtoll(str+7, NULL, 16);
 	if (!bnode_id) {
-	    return 0;
+	    return FS_RID_GONE;
 	}
 
 	return FS_NUM_BNODE(bnode_id);
-    } else if (!isalpha(str[0])) {
-        return FS_RID_GONE;
-    }
-
-    uint64_t data[2];
-    const int slen = strlen(str);
-    md5_init(&md5);
-    md5_append(&md5, (md5_byte_t *) str, slen);
-    md5_finish(&md5, (md5_byte_t *) data);
-    top = GUINT64_FROM_BE(data[0]);
-
-    top |= 0xC000000000000000LL;
-
-    return top;
-}
-
-fs_rid fs_hash_uri_umac(const char *str)
-{
-    uint64_t top;
-
-    if (!str) {
-        return 0;
-    }
-    if (strncmp(str, "bnode:b", 7) == 0) {
-	fs_rid bnode_id = strtoll(str+7, NULL, 16);
+    } else if (strncmp(str, "_:b", 3) == 0) {
+	fs_rid bnode_id = strtoll(str+3, NULL, 16);
 	if (!bnode_id) {
-	    return 0;
+	    return FS_RID_GONE;
 	}
 
 	return FS_NUM_BNODE(bnode_id);
@@ -265,53 +199,21 @@ fs_rid fs_hash_uri_umac(const char *str)
     return top;
 }
 
-fs_rid fs_hash_uri_crc64(const char *str)
+fs_rid fs_hash_uri_ignore_bnode(const char *str)
 {
     uint64_t top;
 
     if (!str) {
         return 0;
     }
-    if (strncmp(str, "bnode:b", 7) == 0) {
-	fs_rid bnode_id = strtoll(str+7, NULL, 16);
-	if (!bnode_id) {
-	    return 0;
-	}
 
-	return FS_NUM_BNODE(bnode_id);
-    } else if (!isalpha(str[0])) {
-        return FS_RID_GONE;
-    }
-
-    top = crc64(str);
+    top = umac_wrapper(str, 0);
     top |= 0xC000000000000000LL;
 
     return top;
 }
 
-fs_rid fs_hash_literal_md5(const char *str, fs_rid attr)
-{
-    md5_state_t md5;
-    uint64_t top;
-
-    if (!str) {
-        return 0;
-    }
-
-    uint64_t data[2];
-    const int slen = strlen(str);
-    md5_init(&md5);
-    md5_append(&md5, (md5_byte_t *) str, slen);
-    md5_finish(&md5, (md5_byte_t *) data);
-    top = GUINT64_FROM_BE(data[0]);
-    top ^= ((fs_rid)attr) >> 2;
-
-    top &= 0x7FFFFFFFFFFFFFFFLL;
-
-    return top;
-}
-
-fs_rid fs_hash_literal_umac(const char *str, fs_rid attr)
+fs_rid fs_hash_literal(const char *str, fs_rid attr)
 {
     uint64_t top;
 
@@ -325,19 +227,19 @@ fs_rid fs_hash_literal_umac(const char *str, fs_rid attr)
     return top;
 }
 
-fs_rid fs_hash_literal_crc64(const char *str, fs_rid attr)
+guint fs_rid_hash(gconstpointer p)
 {
-    uint64_t top;
+    const fs_rid *r = p;
 
-    if (!str) {
-        return 0;
-    }
+    return (guint)*r;
+}
 
-    top = crc64(str);
-    top ^= ((fs_rid)attr) >> 2;
-    top &= 0x7FFFFFFFFFFFFFFFLL;
+gboolean fs_rid_equal(gconstpointer va, gconstpointer vb)
+{
+    const fs_rid *a = va;
+    const fs_rid *b = vb;
 
-    return top;
+    return *a == *b;
 }
 
 /* vi:set ts=8 sts=4 sw=4: */

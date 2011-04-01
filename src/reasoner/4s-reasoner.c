@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <pthread.h>
+#include <glib/gprintf.h>
 
 #include "common/error.h"
 #include "common/4store.h"
@@ -241,7 +242,8 @@ void *process_thread(void *arg) {
 gboolean accept_request(GIOChannel *source, GIOCondition condition, gpointer data) {
     errno = 0;
     GError **gt_error=NULL;
-    GThread * processing_t =g_thread_create(process_thread, source, FALSE, gt_error);
+    //GThread * processing_t =
+    g_thread_create(process_thread, source, FALSE, gt_error);
     if (gt_error)
         fs_error(LOG_ERR,"error creating process_thread %s",(*gt_error)->message);
     return TRUE;
