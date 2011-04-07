@@ -17,7 +17,7 @@ fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu,
                            const char *query, unsigned int flags, int opt_level, int soft_limit, int explain,int reasoning);
 
 /* internal function used to process WHERE clauses */
-int fs_query_process_pattern(fs_query *q, rasqal_graph_pattern *pattern, raptor_sequence *vars);
+int fs_query_process_pattern(fs_query *q, rasqal_graph_pattern *pattern, raptor_sequence *vars, int reasoning);
 
 void fs_query_free(fs_query *q);
 double fs_query_start_time(fs_query *q);

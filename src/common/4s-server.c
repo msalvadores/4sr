@@ -37,7 +37,8 @@
 #include <netdb.h>
 #include <glib.h>
 
-#include "reasoner/4s-reasoner-backend.h" 
+#include "../reasoner/4s-reasoner-common.h" 
+#include "../reasoner/4s-reasoner-backend.h" 
 #include <arpa/inet.h>
 
 static char *global_kb_name = NULL;
@@ -74,7 +75,6 @@ static unsigned char * handle_or_fail(const char *name,
 static void child (int conn, fsp_backend *backend, fs_backend *be)
 {
   int auth = 0;
-  int data_changed=0;
   while (1) {
     fs_segment segment;
     unsigned int length;
@@ -133,11 +133,9 @@ static void child (int conn, fsp_backend *backend, fs_backend *be)
           reply = handle(backend->get_import_times, be, segment, length, content);
           break;
         case FS_INSERT_QUAD:
-          data_changed++;
           reply = handle(backend->insert_quad, be, segment, length, content);
           break;
         case FS_COMMIT_QUAD:
-          data_changed++;
           reply = handle(backend->commit_quad, be, segment, length, content);
           break;
         case FS_GET_QUERY_TIMES:
@@ -153,7 +151,6 @@ static void child (int conn, fsp_backend *backend, fs_backend *be)
           reply = handle(backend->resolve_attr, be, segment, length, content);
           break;
         case FS_DELETE_MODELS:
-          data_changed++;
           reply = handle(backend->delete_models, be, segment, length, content);
           break;
         case FS_NEW_MODELS:
@@ -193,11 +190,22 @@ static void child (int conn, fsp_backend *backend, fs_backend *be)
           reply = handle(backend->choose_segment, be, segment, length, content);
           break;
         case FS_DELETE_QUADS:
-          data_changed++;
           reply = handle(backend->delete_quads, be, segment, length, content);
           break;
+        case RS_GBL_SUBCLASS:
+          reply = fsr_handle_update_cache(segment, length, msg, RS_GBL_SUBCLASS);
+          break;
+        case RS_GBL_SUBPROPERTY:
+          reply = fsr_handle_update_cache(segment, length, msg, RS_GBL_SUBPROPERTY);
+          break;
+        case RS_GBL_DOMAIN:
+          reply = fsr_handle_update_cache(segment, length, msg, RS_GBL_DOMAIN);
+          break;
+        case RS_GBL_RANGE:
+          reply = fsr_handle_update_cache(segment, length, msg, RS_GBL_RANGE);
+          break;
         default:
-          kb_error(LOG_WARNING, "unexpected message type (%d)", msg[3]);
+          kb_error(LOG_WARNING, "unexpected message type (%x)", msg[3]);
           reply = fsp_error_new(segment, "unexpected message type");
           break;
       }
@@ -365,9 +373,6 @@ gboolean accept_fn (GIOChannel *source, GIOCondition condition, gpointer data)
     /* child process */
     fs_backend *be = backend->open(global_kb_name, 0);
 
-    if (backend->reasoner)
-        set_reasoner(backend,be);
-
     if (be) {
       fs_backend_set_min_free(be, global_disk_limit);
       child(conn, backend, be);
@@ -381,36 +386,7 @@ gboolean accept_fn (GIOChannel *source, GIOCondition condition, gpointer data)
 }
 
 
-reasoner_conf *new_reasoner_conf(char *host) {
-    char *ip,*port;
-    if (!strstr(host,":")) {
-        ip=host;
-        port="6789"; 
-    } else {
-        gchar **tokens = g_strsplit(host,":",-1);
-        gchar **ip_t=tokens+0;
-        gchar **port_t=tokens+1;
-        ip = *ip_t;
-        port = *port_t;
-        g_free(tokens);
-    }
-    if (!hostname_is_ip_address(ip)) {
-        struct hostent *he;
-        if ((he = gethostbyname(ip)) == NULL) {  // get the host info
-            fs_error(LOG_ERR,"Unable to get IP for reasoner %s - reasoner not attached !!!", ip);
-            return NULL;
-        }
-        ip = inet_ntoa(*(struct in_addr *)he->h_addr);
-        fs_error(LOG_ERR,"reasoner interface at %s",ip);
-    }
-    reasoner_conf *rs_conf = NULL;
-    rs_conf = calloc(1, sizeof(reasoner_conf));
-    rs_conf->port = atoi(port);
-    rs_conf->addr = ip;
-    return rs_conf;
-}
-
-void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float disk_limit, char *reasoner_service)
+void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float disk_limit)
 {
   struct addrinfo hints, *info;
   uint16_t port = FS_DEFAULT_PORT;
@@ -486,12 +462,6 @@ void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float dis
     kb_error(LOG_CRIT, "failed to open backend");
     return;
   }
-  if (reasoner_service) { 
-      backend->reasoner = new_reasoner_conf(reasoner_service);
-      fprintf(stderr, "Reasoner configured at %s\n",reasoner_service);  
-  }
-  else
-      fprintf(stderr, "No reasoner configured\n");  
 
   GMainLoop *loop = g_main_loop_new (NULL, FALSE);
   fsp_mdns_setup_backend (port, kb_name, backend->segment_count(be));

@@ -315,7 +315,7 @@ static int update_op(struct update_context *uc)
         }
 
         /* perform the WHERE match */
-        fs_query_process_pattern(q, uc->op->where, vars);
+        fs_query_process_pattern(q, uc->op->where, vars, 0);
 
         q->length = fs_binding_length(q->bb[0]);
 
@@ -434,7 +434,6 @@ int fs_update(fs_query_state *qs, char *update, char **message, int unsafe)
     }
     fsp_res_import_commit_all(qs->link);
     fsp_quad_import_commit_all(qs->link, FS_BIND_BY_SUBJECT);
-    fs_error(LOG_ERR,"process update !!!!!!!");
     rasqal_free_query(rq);
 
     if (uctxt.messages) {
@@ -715,7 +714,7 @@ int fs_add(struct update_context *uc, char *from, char *to)
     fs_rid_vector **results;
     fs_rid_vector *slot[4] = { mvec, empty, empty, empty };
     fs_bind_cache_wrapper(uc->qs, NULL, 1, FS_BIND_BY_SUBJECT | FS_BIND_SUBJECT | FS_BIND_PREDICATE | FS_BIND_OBJECT,
-             slot, &results, -1, -1);
+             slot, &results, -1, -1, 0);
     fs_rid_vector_free(mvec);
     fs_rid_vector_free(empty);
 
@@ -793,7 +792,7 @@ int fs_move(struct update_context *uc, char *from, char *to)
 
     /* see if there's any data in <from> */
     fs_bind_cache_wrapper(uc->qs, NULL, 1, FS_BIND_BY_SUBJECT | FS_BIND_SUBJECT,
-             slot, &results, -1, 1);
+             slot, &results, -1, 1, 0);
     if (!results || results[0]->length == 0) {
         if (results) {
             fs_rid_vector_free(results[0]);
@@ -811,7 +810,7 @@ int fs_move(struct update_context *uc, char *from, char *to)
 
     /* get the contents of <from> */
     fs_bind_cache_wrapper(uc->qs, NULL, 1, FS_BIND_BY_SUBJECT | FS_BIND_SUBJECT | FS_BIND_PREDICATE | FS_BIND_OBJECT,
-             slot, &results, -1, -1);
+             slot, &results, -1, -1, 0);
 
     /* delete <to> */
     mvec->data[0] = torid;
@@ -891,7 +890,7 @@ int fs_copy(struct update_context *uc, char *from, char *to)
 
     /* see if there's any data in <from> */
     fs_bind_cache_wrapper(uc->qs, NULL, 1, FS_BIND_BY_SUBJECT | FS_BIND_SUBJECT,
-             slot, &results, -1, 1);
+             slot, &results, -1, 1, 0);
     if (!results || results[0]->length == 0) {
         if (results) {
             fs_rid_vector_free(results[0]);
@@ -909,7 +908,7 @@ int fs_copy(struct update_context *uc, char *from, char *to)
 
     /* get the contents of <from> */
     fs_bind_cache_wrapper(uc->qs, NULL, 1, FS_BIND_BY_SUBJECT | FS_BIND_SUBJECT | FS_BIND_PREDICATE | FS_BIND_OBJECT,
-             slot, &results, -1, -1);
+             slot, &results, -1, -1, 0);
 
     /* map old bnodes to new ones */
     map_bnodes(uc, results[0]);

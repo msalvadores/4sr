@@ -71,8 +71,6 @@
 
 #define FS_DELETE_QUADS 0x32
 
-#define FS_GET_REASONER_LOCATION 0x60
-
 /* message header  = 16 bytes */
 #define FS_HEADER 16
 
@@ -164,7 +162,8 @@ int fsp_bind_limit_all (fsp_link *link,
                   fs_rid_vector *orids,
                   fs_rid_vector ***result,
                   int offset,
-                  int limit);
+                  int limit,
+                  int reasoning);
 
 #define fsp_bind(link, segment, flags, mrids, srids, prids, orids, result) \
 	fsp_bind_limit(link, segment, flags, mrids, srids, prids, orids, result, -1, -1)
@@ -173,7 +172,7 @@ int fsp_bind_limit_all (fsp_link *link,
 	fsp_bind_limit_many(link, flags, mrids, srids, prids, orids, result, -1, -1)
 
 #define fsp_bind_all(link, flags, mrids, srids, prids, orids, result) \
-	fsp_bind_limit_all(link, flags, mrids, srids, prids, orids, result, -1, -1)
+	fsp_bind_limit_all(link, flags, mrids, srids, prids, orids, result, -1, -1, 0)
 
 int fsp_reverse_bind_all (fsp_link *link,
                           int flags,
@@ -269,11 +268,9 @@ typedef struct {
   void (* close) (fs_backend *backend);
   int (* segment_count) (fs_backend *backend);
   
-    reasoner_conf *reasoner;
 } fsp_backend;
 
-void fsp_serve (const char *kb_name, fsp_backend *implementation, int daemon, float free_disk, char *reasoner_service);
-void set_reasoner(fsp_backend *backend,fs_backend *be);
+void fsp_serve (const char *kb_name, fsp_backend *implementation, int daemon, float free_disk);
 const char *fsp_kb_name(fsp_link *link);
 
 int fsp_hit_limits(fsp_link *link);
@@ -288,5 +285,8 @@ typedef enum {
 } fsp_hash_enum;
 
 fsp_hash_enum fsp_hash_type(fsp_link *link);
+
+/* ms8: 4sr operation */
+void fsr_send_cache_to_segments(fsp_link *link,unsigned char *out);
 
 #endif

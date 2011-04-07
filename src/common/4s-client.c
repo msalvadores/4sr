@@ -866,7 +866,8 @@ int fsp_bind_limit_all (fsp_link *link,
                         fs_rid_vector *orids,
                         fs_rid_vector ***result,
                         int offset,
-                        int limit)
+                        int limit,
+                        int reasoning)
 {
   fs_segment segment;
   unsigned char *out, *content;
@@ -883,14 +884,16 @@ int fsp_bind_limit_all (fsp_link *link,
   memcpy(content, &flags, sizeof(flags));
   memcpy(content + 4, &offset, sizeof(offset));
   memcpy(content + 8, &limit, sizeof(limit));
+  memcpy(content + 12, &reasoning, sizeof(limit));
+
   value = mrids->length * 8;
-  memcpy(content + 12, &value, sizeof(value));
-  value = srids->length * 8;
   memcpy(content + 16, &value, sizeof(value));
-  value = prids->length * 8;
+  value = srids->length * 8;
   memcpy(content + 20, &value, sizeof(value));
-  value = orids->length * 8;
+  value = prids->length * 8;
   memcpy(content + 24, &value, sizeof(value));
+  value = orids->length * 8;
+  memcpy(content + 28, &value, sizeof(value));
   content += 32;
 
   memcpy(content, mrids->data, mrids->length * 8);
@@ -2132,3 +2135,25 @@ int fsp_get_quad_freq_all (fsp_link *link, int index, int count, fs_quad_freq **
   return 0;
 }
 
+/* ms8: 4sr operation */
+void fsr_send_cache_to_segments(fsp_link *link,unsigned char *out) {
+   unsigned int length;
+   int sock[link->segments];
+   fs_segment segment;
+   
+
+   for (segment = 0; segment < link->segments; ++segment) {
+    unsigned int * const s = (unsigned int *) (out + 8);
+    unsigned int * const l = (unsigned int *) (out + 4);
+    *s = segment;
+    sock[segment] = fsp_write(link, out, *l);
+   }
+
+   for (segment = 0; segment < link->segments; ++segment) {
+    unsigned char *in = message_recv(sock[segment], &segment, &length);
+    if (!in) {
+        fs_error(LOG_ERR,"recv message from %d reasoner",segment);
+    }
+    g_static_mutex_unlock (&link->mutex[segment]);
+   }
+}

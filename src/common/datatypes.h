@@ -47,9 +47,13 @@
 /* FS_BIND_PRICE is backend-only, never sent over the wire */
 #define FS_BIND_PRICE            0x10000000
 #define FS_QUERY_EXPLAIN         0x20000000
-#define FS_QUERY_COUNT           0x40000000
+/* #define FS_QUERY_COUNT           0x40000000 deprecated */
 #define FS_QUERY_DEFAULT_GRAPH   0x80000000
-#define REASONER_BIND_OP         0x10000000
+
+
+#define FSR_RDFS_NO              0x0000
+#define FSR_RDFS_PC              0x0001
+#define FSR_RDFS_PCDR            0x0002
 
 typedef struct {
     char *target_kb;

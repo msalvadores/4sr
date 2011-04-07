@@ -42,10 +42,14 @@
 #include "../common/hash.h"
 #include "../common/error.h"
 
-static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_levelo, int result_flags, int soft_limit,raptor_world *rw, int no_reasoner);
-static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit,raptor_world *rw,int no_reasoner);
+#include "../reasoner/4s-reasoner-query.h"
+#include "../reasoner/4s-reasoner-common.h"
+
+static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_levelo, int result_flags, int soft_limit,raptor_world *rw, int reasoning);
+static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit,raptor_world *rw,int reasoning);
 
 static int show_timing;
+static int default_reasoning = FSR_SUBC_FLAG | FSR_SUBP_FLAG;
 
 static double ftime()
 {
@@ -62,7 +66,7 @@ int main(int argc, char *argv[])
     //fprintf(stderr, "MDNS SERVICE_TYPE  %s\n", SERVICE_TYPE);
     char *password = fsp_argv_password(&argc, argv);
 
-    static char *optstring = "hevf:PO:Ib:rs:dn";
+    static char *optstring = "hevf:R:PO:Ib:rs:d";
     int no_reasoner = 0;
     char *format = getenv("FORMAT");
     char *kb_name = NULL, *query = NULL;
@@ -91,7 +95,7 @@ int main(int argc, char *argv[])
         { "soft-limit", 1, 0, 's' },
         { "default-graph", 0, 0, 'd' },
         { "base", 1, 0, 'b' },
-        { "no-reasoner", 0, 0, 'n' },
+        { "reasoning", 0, 0, 'R' },
         { 0, 0, 0, 0 }
     };
 
@@ -123,6 +127,16 @@ int main(int argc, char *argv[])
             help_return = 0;
         } else if (c == 'e') {
             explain = 1;
+        } else if (c == 'R') { 
+            if (!optarg || !strlen(optarg)) {
+               fprintf(stdout, "\tError: [-R] needs a string made of letters C (subClass) P (subProp) D (Domain), R (Range) or N (None).\n\ti.e: '-r PC' enables subproperty and subclass reasoning.\n");
+               exit(0); 
+            }
+            default_reasoning = fsr_reasoning_level_flag(optarg);
+            if (default_reasoning == FSR_ERROR_FLAG) {
+               fprintf(stdout, "\tError: [-R] needs a string made of letters C (subClass) P (subProp) D (Domain), R (Range) or N (None).\n\ti.e: '-r PC' enables subproperty and subclass reasoning.\n");
+               exit(0); 
+            }
         } else if (c == 'V') {
             printf("%s, built for 4store %s\n", argv[0], GIT_REV);
             exit(0); 
@@ -160,8 +174,9 @@ int main(int argc, char *argv[])
       fprintf(stdout, " -s, --soft-limit  Override default soft limit on search breadth\n");
       fprintf(stdout, " -d, --default-graph  Enable SPARQL default graph support\n");
       fprintf(stdout, " -b, --base      Set base URI for query\n");
-      fprintf(stderr, " -n, --no-reasoner  disables the RDFS reasoner\n");
-
+      fprintf(stdout, " -R,--reasoning   specify the reasoning by default for every query\n");
+      fprintf(stdout, "    C (subClass) P (subProp) D (Domain), R (Range) or N (None).\n");
+      fprintf(stdout, "    i.e: '-r PC' enables subproperty and subclass reasoning\n");
       exit(help_return);
     }
 
@@ -225,7 +240,7 @@ int main(int argc, char *argv[])
     fs_query_state *qs = fs_query_init(link, NULL, NULL);
     qs->verbosity = verbosity;
     
-    fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit, explain, no_reasoner);
+    fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit, explain, default_reasoning);
     
     if (fs_query_errors(qr)) {
         ret = 1;
@@ -267,7 +282,7 @@ int main(int argc, char *argv[])
 
 #define MAX_Q_SIZE 1000000
 
-static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit, raptor_world *rw, int no_reasoning)
+static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit, raptor_world *rw, int reasoning)
 {
     char query[MAX_Q_SIZE];
     char *pos;
@@ -295,7 +310,7 @@ static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lan
                 then = fs_time();
                 printf("Q: %s\n", query);
             }
-	    fs_query *tq = fs_query_execute(qs, link, bu, query,result_flags, opt_level, soft_limit, 0, no_reasoning);
+	    fs_query *tq = fs_query_execute(qs, link, bu, query,result_flags, opt_level, soft_limit, 0, reasoning);
 	    
         fs_query_results_output(tq, result_format, 0, stdout);
             if (show_timing) {
@@ -426,7 +441,7 @@ static void interactive(fsp_link *link, raptor_uri *bu, const char *result_forma
             if (show_timing) {
                 then = fs_time();
             }
-	    fs_query *tq = fs_query_execute(qs, link, bu, query,result_flags, opt_level, soft_limit,0,no_reasoning);
+	    fs_query *tq = fs_query_execute(qs, link, bu, query,result_flags, opt_level, soft_limit,0,default_reasoning);
             if (show_timing) {
                 double now = fs_time();
                 printf("# bind time %.3fs\n", now-then);

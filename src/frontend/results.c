@@ -33,6 +33,7 @@
 #include "../common/hash.h"
 #include "../common/error.h"
 #include "../common/rdf-constants.h"
+#include "../reasoner/4s-reasoner-common.h"
 
 #define CACHE_SIZE 65536
 #define CACHE_MASK (CACHE_SIZE-1)
@@ -63,6 +64,13 @@ static void setup_l1_cache()
 
 static int resolve(fs_query *q, fs_rid rid, fs_resource *res)
 {
+    if (rid == ENTAIL_GRAPH) {
+        res->rid = rid;
+        res->attr = FS_TYPE_URI;
+        res->lex = ENTAIL_GRAPH_URI;
+        return 0;
+    }
+
     res->rid = FS_RID_NULL;
     res->attr = FS_RID_NULL;
     res->lex = NULL;
@@ -2081,6 +2089,7 @@ static void prefetch_lexical_data(fs_query *q, long int next_row,const int rows)
                 rid = FS_RID_NULL;
             }
             if (FS_IS_BNODE(rid)) continue;
+            if (rid == ENTAIL_GRAPH) continue;
             if (res_l2_cache[rid & CACHE_MASK].rid == rid) continue;
             pre_cache_len++;
             fs_rid_vector_append(q->pending[FS_RID_SEGMENT(rid, q->segments)], rid);

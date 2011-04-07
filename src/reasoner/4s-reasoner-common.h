@@ -34,12 +34,33 @@
 #define RDFS_SUBCLASS_XXPO 0x0002
 
 #define ENTAIL_GRAPH 0xFB3D08630A37C1BA //<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>
+#define ENTAIL_GRAPH_URI "http://4sreasoner.ecs.soton.ac.uk/entailedgraph/"
 
 //define DEBUG_RDFS 1
 
-unsigned char * mtrx_to_msg(int type,fs_rid_vector **mtx,int cols);
-fs_rid_vector **msg_to_mtrx(unsigned char *msg);
-unsigned char *reasoner_recv(int conn,unsigned int* bytes_read);
-unsigned char * list_integer_msg(int type,GList *list);
+/* HTTP params for reasoner level */
+#define FSR_NONE 'N'
+#define FSR_DOMAIN 'D'
+#define FSR_RANGE  'R'
+#define FSR_SUBP   'P'
+#define FSR_SUBC   'C'
 
+/* Internal flags for reasoner level */
+
+#define FSR_NULL_FLAG   00000
+#define FSR_NONE_FLAG   02000
+#define FSR_DOMAIN_FLAG 00001
+#define FSR_RANGE_FLAG  00002 
+#define FSR_SUBP_FLAG   00004
+#define FSR_SUBC_FLAG   00010
+#define FSR_ERROR_FLAG  01000
+
+#define FSR_DO_SC(x)   (x & FSR_SUBC_FLAG)
+#define FSR_DO_SP(x)   (x & FSR_SUBP_FLAG)
+#define FSR_DO_DOM(x)   (x & FSR_DOMAIN_FLAG)
+#define FSR_DO_RAN(x)   (x & FSR_RANGE_FLAG)
+#define FSR_DO_NONE(x)   (x & FSR_NONE_FLAG)
+
+unsigned char * fsr_mtrx_to_msg(int type,fs_rid_vector **mtx,int cols);
+fs_rid_vector **fsr_msg_to_mtrx(unsigned char *msg);
 #endif

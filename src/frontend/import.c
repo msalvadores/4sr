@@ -722,7 +722,7 @@ static void store_stmt(void *user_data, raptor_statement *statement)
         fs_rid_vector *prids = fs_rid_vector_new_from_args(1, fs_c.fs_text_index);
         fs_rid_vector *orids = fs_rid_vector_new_from_args(3, fs_c.fs_token, fs_c.fs_dmetaphone, fs_c.fs_stem);
         fs_rid_vector **result = NULL;
-        fsp_bind_limit_all(data->link, flags, mrids, srids, prids, orids, &result, -1, -1);
+        fsp_bind_limit_all(data->link, flags, mrids, srids, prids, orids, &result, -1, -1, 0);
         if (result && result[0]) {
             for (int row = 0; row < result[0]->length; row++) {
                 /* result[0] has the users predicate in and result[1] has the

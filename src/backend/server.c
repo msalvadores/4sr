@@ -42,7 +42,6 @@
 
 #include "lock.h"
 
-#include "reasoner/4s-reasoner-backend.h" 
 #include <arpa/inet.h>
 #ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX _POSIX_HOST_NAME_MAX
@@ -239,8 +238,6 @@ static unsigned char * handle_delete_models (fs_backend *be, fs_segment segment,
 
   fs_delete_models(be, segment, &models);
 
-  notify_import_finished(be);
-
   return message_new(FS_DONE_OK, segment, 0);
 }
 
@@ -321,8 +318,6 @@ static unsigned char * handle_stop_import (fs_backend *be, fs_segment segment,
     return fsp_error_new(segment, "insert failed");
   }
   
-  notify_import_finished(be);
-
   return message_new(FS_DONE_OK, segment, 0);
 }
 
@@ -367,8 +362,6 @@ static unsigned char * handle_delete_quads (fs_backend *be, fs_segment segment,
   fs_rid_vector *args[4] = { &models, &subjects, &predicates, &objects };
   fs_delete_quads(be, args);
   /* FIXME, should check return value */
-
-  notify_import_finished(be);
 
   return message_new(FS_DONE_OK, 0, 0);
 }
@@ -577,19 +570,20 @@ static unsigned char * handle_bind_limit (fs_backend *be, fs_segment segment,
 
   fs_rid_vector models, subjects, predicates, objects;
   unsigned int flags, value;
-  int offset, limit;
+  int offset, limit, reasoning;
 
   memcpy(&flags, content, sizeof (flags));
   memcpy(&offset, content + 4, sizeof (offset));
   memcpy(&limit, content + 8, sizeof (limit));
+  memcpy(&reasoning, content + 12, sizeof (reasoning));
 
-  memcpy(&value, content + 12, sizeof (models.length));
+  memcpy(&value, content + 16, sizeof (models.length));
   models.size = models.length = value / 8;
-  memcpy(&value, content + 16, sizeof (subjects.length));
+  memcpy(&value, content + 20, sizeof (subjects.length));
   subjects.size = subjects.length = value / 8;
-  memcpy(&value, content + 20, sizeof (predicates.length));
+  memcpy(&value, content + 24, sizeof (predicates.length));
   predicates.size = predicates.length = value / 8;
-  memcpy(&value, content + 24, sizeof (objects.length));
+  memcpy(&value, content + 28, sizeof (objects.length));
   objects.size = objects.length = value / 8;
   content += 32;
 
@@ -612,7 +606,7 @@ static unsigned char * handle_bind_limit (fs_backend *be, fs_segment segment,
   fs_rid_vector **bindings;
 
   bindings = fs_bind(be, segment, flags,
-                     &models, &subjects, &predicates, &objects, offset, limit);
+                     &models, &subjects, &predicates, &objects, offset, limit, reasoning);
 
   int k, cols = 0;
   for (k = 0; k < 4; ++k) {
@@ -1116,13 +1110,10 @@ int main (int argc, char *argv[])
 
   int c, opt_index=0;
   
-  static const char *optstr = "Dl:r:";
-  char *reasoner=NULL;
-  int reasoner_flag = 0;
+  static const char *optstr = "Dl:";
 
   static struct option longopt[] = {
     { "daemon", 0, 0, 'D' },
-    { "reasoner",optional_argument, 0, 'r' },
     { "limit", 1, 0, 'l' },
     { "help", 0, 0, 'h' },
     { "version", 0, 0, 'v' },
@@ -1145,10 +1136,6 @@ int main (int argc, char *argv[])
     case 'l':
       disk_limit = atof(optarg);
       break;
-    case 'r':
-        reasoner_flag = 1;
-        reasoner = optarg;
-        break;
     case 'h':
       help_return = 0;
       help = 1;
@@ -1180,16 +1167,7 @@ int main (int argc, char *argv[])
     return 1;
   }
   
-  if (reasoner_flag && !reasoner) {
-    char host_name[HOST_NAME_MAX + 1];
-    gethostname(host_name, HOST_NAME_MAX);
-    reasoner = host_name;
-  }
-  fsp_serve(kb_name, &native_backend, daemon, disk_limit,reasoner);
+  fsp_serve(kb_name, &native_backend, daemon, disk_limit);
 
   return 2; /* fsp_serve returns only if there is an error */
-}
-
-void set_reasoner(fsp_backend *backend,fs_backend *be) {
-    be->reasoner = backend->reasoner;
 }

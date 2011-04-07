@@ -52,7 +52,7 @@ struct _fs_bind_cache {
 
 int fs_bind_cache_wrapper(fs_query_state *qs, fs_query *q, int all,
                 int flags, fs_rid_vector *rids[4],
-                fs_rid_vector ***result, int offset, int limit)
+                fs_rid_vector ***result, int offset, int limit, int reasoning)
 {
     g_static_mutex_lock(&qs->cache_mutex);
     if (!qs->bind_cache) {
@@ -133,7 +133,7 @@ int fs_bind_cache_wrapper(fs_query_state *qs, fs_query *q, int all,
 
     int limited_before = fsp_hit_limits(qs->link);
 
-    ret = fsp_bind_limit_all(qs->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit);
+    ret = fsp_bind_limit_all(qs->link, flags, rids[0], rids[1], rids[2], rids[3], result, offset, limit, reasoning);
     
 
     int limited = fsp_hit_limits(qs->link) - limited_before;

@@ -46,6 +46,8 @@
 #include "../frontend/query.h"
 #include "../frontend/import.h"
 #include "../frontend/update.h"
+#include "../reasoner/4s-reasoner-query.h"
+#include "../reasoner/4s-reasoner-common.h"
 
 #include "httpd.h"
 
@@ -74,7 +76,7 @@ static int default_graph = 0;
 static int soft_limit = 0; /* default value for soft limit */
 static int opt_level = -1;  /* default value for optimisation level */
 static int cors_support = -1; /* cross-origin resource sharing (CORS) support */
-
+static int default_reasoning = FSR_SUBC_FLAG | FSR_SUBP_FLAG;
 static fs_query_state *query_state;
 
 static GThreadPool* pool;
@@ -120,15 +122,6 @@ static void query_log_reopen ()
 {
   query_log_close();
   query_log_open(fsp_kb_name(fsplink));
-}
-
-static void reopen_link() {
-  //FIXME this is a workaround to allow 4s-reasoner get updated the rdfs triples, otherwise deadlock
-  fs_error(LOG_INFO, "giving entrance to reasoner (1 second free locks)");
-  fsp_close_link(fsplink);
-  sleep(1);
-  fsplink = fsp_open_link(gbl_kb_name, gbl_password, FS_OPEN_HINT_RW);
-  fs_error(LOG_INFO, "link reaopen");
 }
 
 static void query_log (client_ctxt *ctxt, const char *query)
@@ -342,10 +335,10 @@ static void http_query_worker(gpointer data, gpointer user_data)
 {
   client_ctxt *ctxt = (client_ctxt *) data;
   
-  int optlevel = ctxt->no_reasoning ? 3 : 0;
+  int optlevel = !ctxt->reasoning ? opt_level : 0;
 
   ctxt->start_time = fs_time();
-  ctxt->qr = fs_query_execute(query_state, fsplink, bu, ctxt->query_string, ctxt->query_flags, optlevel, ctxt->soft_limit, 0, ctxt->no_reasoning);
+  ctxt->qr = fs_query_execute(query_state, fsplink, bu, ctxt->query_string, ctxt->query_flags, optlevel, ctxt->soft_limit, 0, ctxt->reasoning);
   if (ctxt->qr->errors) {
     http_error(ctxt, "400 Parser error");
     GSList *w = ctxt->qr->warnings;
@@ -468,7 +461,6 @@ static void http_import_start(client_ctxt *ctxt)
       g_free(message);
     }
     http_send(ctxt, "\n");
-    reopen_link();
     http_close(ctxt);
 #else
     http_import_queue_remove(ctxt);
@@ -535,7 +527,8 @@ static void http_import_start(client_ctxt *ctxt)
 static void http_post_data(client_ctxt *ctxt, char *model, const char *content_type, char *data)
 {
   ctxt->importing = 1;
-  ctxt->no_reasoning = 1;
+  ctxt->reasoning = FSR_NONE_FLAG;
+
   long int length = strlen(data);
   fs_error(LOG_INFO, "starting add to %s (%ld bytes)", model, length);
 
@@ -570,7 +563,7 @@ static void http_post_data(client_ctxt *ctxt, char *model, const char *content_t
   ctxt->importing = 0;
   fs_error(LOG_INFO, "finished add to %s", model);
   
-  reopen_link();
+  fsr_init_reasoner(fsplink);
 
   http_import_queue_remove(ctxt);
 
@@ -590,6 +583,7 @@ static void http_import_queue_remove(client_ctxt *ctxt)
   import_queue = g_slist_remove(import_queue, ctxt);
   if (import_queue) {
     http_import_start((client_ctxt *) import_queue->data);
+    fsr_init_reasoner(fsplink);
   }
 }
 
@@ -617,8 +611,6 @@ static void http_put_finished(client_ctxt *ctxt, const char *msg)
   g_free(ctxt->import_uri);
   ctxt->import_uri = NULL;
 
-  reopen_link();
-
   http_import_queue_remove(ctxt);
 
   if (msg) {
@@ -631,6 +623,7 @@ static void http_put_finished(client_ctxt *ctxt, const char *msg)
   } else {
     http_code(ctxt, "201 imported successfully");
   }
+  fsr_init_reasoner(fsplink);
   http_close(ctxt);
 }
 
@@ -696,8 +689,10 @@ static void http_delete_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
     fs_query_cache_flush(query_state, 0);
     fs_error(LOG_INFO, "deleted model <%s>", url);
     http_error(ctxt, "200 deleted successfully");
-    reopen_link();
   }
+
+  fsr_init_reasoner(fsplink);
+
   fs_rid_vector_free(mvec);
 
   http_close(ctxt);
@@ -901,6 +896,9 @@ static void http_get_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
   }
   char *path = url;
   url_decode(path);
+
+  ctxt->reasoning = default_reasoning;
+
   if (!strcmp(path, "/sparql/")) {
     char *query = NULL;
     while (qs) {
@@ -936,8 +934,8 @@ static void http_get_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         url_decode(value);
         default_graph = value;
       }
-      else if (!strcmp(key, "no-reasoner")) {
-        ctxt->no_reasoning = !strcmp(value, "1") || !strcmp(value, "true") || !strcmp(value, "yes");
+      else if (!strcmp(key, "reasoning")) {
+        ctxt->reasoning = fsr_reasoning_level_flag(value);
       }
       qs = next;
     }
@@ -1067,8 +1065,8 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         url_decode(value);
         default_graph = value;
       }
-      else if (!strcmp(key, "no-reasoner")) {
-         ctxt->no_reasoning = 1;
+      else if (!strcmp(key, "reasoning")) {
+          ctxt->reasoning = fsr_reasoning_level_flag(value);
       }
       qs = next;
     }
@@ -1144,6 +1142,7 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
       } else {
         import_queue = g_slist_append(import_queue, ctxt);
         http_import_start(ctxt);
+        fsr_init_reasoner(fsplink);
       }
     } else {
       http_error(ctxt, "500 SPARQL protocol error");
@@ -1641,7 +1640,9 @@ static int server_setup (int background, const char *host, const char *port)
     fs_error(LOG_INFO, "4store HTTP daemon " GIT_REV " started on port %s", port);
   }
 
-  fs_error(LOG_INFO, "[with reasoner]");
+  gchar *level_res = fsr_reasoning_level_string(default_reasoning);
+  fs_error(LOG_INFO, "[Reasoning: %s]",level_res);
+  g_free(level_res);
   return srv;
 }
 
@@ -1661,9 +1662,10 @@ static void child (int srv, char *kb_name, char *password)
     fs_error(LOG_ERR, "NO-OP failed for “%s”", kb_name);
     exit(4);
   }
-
+  
   fs_hash_init(fsp_hash_type(fsplink));
 
+  fsr_init_reasoner(fsplink);
   const char *features = fsp_link_features(fsplink);
   has_o_index = !(strstr(features, "no-o-index")); /* tweak */
 
@@ -1733,8 +1735,19 @@ int main(int argc, char *argv[])
 
 
   int o;
-  while (!help && (o = getopt(argc, argv, "DH:p:Uds:O:X")) != -1) {
+  while (!help && (o = getopt(argc, argv, "DH:p:R:Uds:O:X")) != -1) {
     switch (o) {
+      case 'R': 
+        if (!optarg || !strlen(optarg)) {
+           fprintf(stdout, "\tError: [-R] needs a string made of letters C (subClass) P (subProp) D (Domain), R (Range) or N (None).\n\ti.e: '-r PC' enables subproperty and subclass reasoning.\n");
+           return -1;
+        }
+        default_reasoning = fsr_reasoning_level_flag(optarg);
+        if (default_reasoning == FSR_ERROR_FLAG) {
+           fprintf(stdout, "\tError: [-R] needs a string made of letters C (subClass) P (subProp) D (Domain), R (Range) or N (None).\n\ti.e: '-r PC' enables subproperty and subclass reasoning.\n");
+           return -1;
+        }
+        break;
       case 'D':
         daemonize = 0;
         break;
@@ -1746,7 +1759,6 @@ int main(int argc, char *argv[])
         break;
       case 'U':
 	unsafe = 1;
-	break;
       case 'd':
 	default_graph = 1;
 	break;
@@ -1779,6 +1791,9 @@ int main(int argc, char *argv[])
     fprintf(stdout, "       -s   default soft limit (-1 to disable)\n");
     fprintf(stdout, "       -O   set query optimiser level (0-3, default is 3)\n");
     fprintf(stdout, "       -X   enable public cross-origin resource sharing (CORS) support\n");
+    fprintf(stdout, "       -R   specify the reasoning by default for every query\n");
+    fprintf(stdout, "            C (subClass) P (subProp) D (Domain), R (Range) or N (None).\n");
+    fprintf(stdout, "            i.e: '-r PC' enables subproperty and subclass reasoning\n");
     fprintf(stdout, "Options can also be set permenantly in /etc/4store.conf\n");
     fprintf(stdout, "see http://4store.org/trac/wiki/SparqlServer for details\n");
 

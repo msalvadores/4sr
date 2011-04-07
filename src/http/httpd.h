@@ -45,7 +45,7 @@ typedef struct {
   guint watchdog;
   int soft_limit;
   char *output;
-  int no_reasoning;
+  int reasoning;
   unsigned int query_id;
   double start_time;
 } client_ctxt;

@@ -17,9 +17,7 @@
 #include "common/error.h"
 #include "backend/backend-intl.h"
 
-fs_rid_vector *get_tree_closure(fs_rid *node,GHashTable* nodes, fs_rid_vector *partial);
-void loadRDFSTrees(reasoner_conf *reasoner);
-unsigned int send_message(int sckt_cl, char *addr, int port, unsigned char *msg, int len);
+static fs_rid_vector *get_tree_closure(fs_rid *node,GHashTable* nodes, fs_rid_vector *partial);
 
 static GHashTable* subClassOf_node = NULL;
 static GHashTable* subPropertyOf_node = NULL;
@@ -28,19 +26,15 @@ static GHashTable* domain_node = NULL;
 
 //static unsigned char fsp_vermagic[4] = { 'I', 'D', FS_PROTO_VER_MINOR, 0x0 };
 
-GHashTable *get_rdfs_domains(reasoner_conf *reasoner) {
-    if (!domain_node)
-        loadRDFSTrees(reasoner);
+GHashTable *fsr_get_rdfs_domains() {
     return domain_node;
 }
 
-GHashTable *get_rdfs_ranges(reasoner_conf *reasoner) {
-    if (!range_node)
-        loadRDFSTrees(reasoner);
+GHashTable *fsr_get_rdfs_ranges() {
     return range_node;
 }
 
-GNode *get_node(GHashTable* lookup,fs_rid *rid) {
+static GNode *get_node(GHashTable* lookup,fs_rid *rid) {
 	GNode *node = (GNode *) g_hash_table_lookup(lookup,rid);
 	if (node == NULL) {
 		node = g_node_new(rid);
@@ -49,7 +43,7 @@ GNode *get_node(GHashTable* lookup,fs_rid *rid) {
 	return node;
 }
 
-void add_elto_set(GHashTable* lookup,fs_rid *rid,fs_rid_set *eltos) {
+void fsr_add_elto_set(GHashTable* lookup,fs_rid *rid,fs_rid_set *eltos) {
 	fs_rid_set *s = (fs_rid_set *) g_hash_table_lookup(lookup,rid);
 	if (s == NULL) {
 		s = fs_rid_set_new();
@@ -64,7 +58,7 @@ void add_elto_set(GHashTable* lookup,fs_rid *rid,fs_rid_set *eltos) {
     fs_rid_set_rewind(eltos);
 }
 
-void add_1elto_set(GHashTable* lookup,fs_rid *rid,fs_rid *elto) {
+static void add_1elto_set(GHashTable* lookup,fs_rid *rid,fs_rid *elto) {
 	fs_rid_set *s = (fs_rid_set *) g_hash_table_lookup(lookup,rid);
 	if (s == NULL) {
 		s = fs_rid_set_new();
@@ -73,7 +67,8 @@ void add_1elto_set(GHashTable* lookup,fs_rid *rid,fs_rid *elto) {
     fs_rid_set_add(s,*elto);
 }
 
-GList *get_assignment_list(unsigned char *mess,GList *origin) {
+/*
+static GList *get_assignment_list(unsigned char *mess,GList *origin) {
     unsigned char *data = mess + FS_HEADER;
     unsigned int * const l = (unsigned int *) (mess + 4);
     int elements = *l / sizeof(int);
@@ -90,7 +85,7 @@ GList *get_assignment_list(unsigned char *mess,GList *origin) {
     return ret;
 }
 
-unsigned char * request_msg(int type, size_t data_length) {
+static unsigned char * request_msg(int type, size_t data_length) {
 	unsigned char *buffer = calloc(1, FS_HEADER + data_length);
 	unsigned int * const l = (unsigned int *) (buffer + 4);
 	*l = (unsigned int) data_length;
@@ -98,7 +93,8 @@ unsigned char * request_msg(int type, size_t data_length) {
 	return buffer;
 }
 
-GList *get_equads_assignment(fs_segment segment,GList *entailments,reasoner_conf *reasoner) {
+
+GList *get_equads_assignment(fs_segment segment,GList *entailments) {
     size_t data_length = g_list_length(entailments) * 24;
     unsigned char *buffer = request_msg(RS_QUAD_ASSIGN,data_length); 
     unsigned int * const s = (unsigned int *) (buffer + 8);
@@ -129,7 +125,6 @@ GList *get_equads_assignment(fs_segment segment,GList *entailments,reasoner_conf
     g_list_free(entailments);
     return assign;
 }
-
 
 unsigned char * send_receive(unsigned char *msg,size_t len,const char *addr,int port,size_t *resp_len) {
         fs_error(LOG_ERR,"addr %s",addr);
@@ -172,7 +167,7 @@ unsigned char * send_receive(unsigned char *msg,size_t len,const char *addr,int 
     return resp;
 }
 
-unsigned int send_message(int sckt_cl,char *addr,int port,unsigned char *msg, int len) {
+static unsigned int send_message(int sckt_cl,char *addr,int port,unsigned char *msg, int len) {
     struct sockaddr_in st_sckt_addr;
     int res;
     unsigned int count;
@@ -207,32 +202,18 @@ unsigned int send_message(int sckt_cl,char *addr,int port,unsigned char *msg, in
     return count;
 }
 
+*/
 
-void notify_import_finished(fs_backend *be) {
-    reasoner_conf *reasoner = be->reasoner;
-    unsigned char *req = request_msg(RS_NOTIFY_IMPORT,0);
-    int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    unsigned int count = send_message(sckt_cl,reasoner->addr,reasoner->port,req,FS_HEADER);
-    if (count == 0)
-        fs_error(LOG_ERR,"import notification no bytes written on send to %s:%i",reasoner->addr,reasoner->port);
-    unsigned char *resp = reasoner_recv(sckt_cl, &count);
-    if (resp) {
-        #ifdef DEBUG_RDFS
-        fs_error(LOG_ERR,"notify import sent");
-        #endif
-    }
-}
-
-gboolean fs_rid_equalr(fs_rid *v1,fs_rid *v2) {
+gboolean fsr_rid_equal(fs_rid *v1,fs_rid *v2) {
 	return *v1==*v2;
 }
 
-guint fs_rid_hashr(fs_rid *v) {
+guint fsr_rid_hash(fs_rid *v) {
 	return (guint)(*v);
 }
 
-GHashTable* edges_to_tree(fs_rid_vector **edges) {
-	GHashTable* node_lookup = g_hash_table_new( (GHashFunc) fs_rid_hashr, (GEqualFunc) fs_rid_equalr);
+static GHashTable* edges_to_tree(fs_rid_vector **edges) {
+	GHashTable* node_lookup = g_hash_table_new( (GHashFunc) fsr_rid_hash, (GEqualFunc) fsr_rid_equal);
     //return node_lookup;
 
 	int length = edges[0]->length;
@@ -255,8 +236,8 @@ GHashTable* edges_to_tree(fs_rid_vector **edges) {
 	return node_lookup;
 }
 
-GHashTable* edges_to_table(fs_rid_vector **edges) {
-	GHashTable* node_lookup = g_hash_table_new( (GHashFunc) fs_rid_hashr, (GEqualFunc) fs_rid_equalr);
+static GHashTable* edges_to_table(fs_rid_vector **edges) {
+	GHashTable* node_lookup = g_hash_table_new( (GHashFunc) fsr_rid_hash, (GEqualFunc) fsr_rid_equal);
 
 	int length = edges[0]->length;
 	for (int k = 0; k < length; ++k) {
@@ -269,7 +250,7 @@ GHashTable* edges_to_table(fs_rid_vector **edges) {
 	}
 	return node_lookup;
 }
-
+/*
 GHashTable* get_rdfs_data(char *addr,int port,int type) {
     unsigned char *req = request_msg(type,0);
     int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -295,7 +276,7 @@ GHashTable* get_rdfs_data(char *addr,int port,int type) {
     return nodes;
 }
 
-void extend_table_with(GHashTable *table,GHashTable *hierarchy) {
+static void extend_table_with(GHashTable *table,GHashTable *hierarchy) {
     if ((g_hash_table_size(table) == 0)  || (g_hash_table_size(hierarchy) == 0 ))
         return;
 
@@ -325,8 +306,9 @@ void extend_table_with(GHashTable *table,GHashTable *hierarchy) {
         tmp = g_list_next(tmp);
     }
 }
+*/
 
-void dumpTable(GHashTable *table) {
+void fsr_dumpTable(GHashTable *table) {
     GList *tmp,*list = NULL;
     list = g_hash_table_get_keys(table);
     tmp = list;
@@ -341,36 +323,15 @@ void dumpTable(GHashTable *table) {
     }
 }
 
-void loadRDFSTrees(reasoner_conf *reasoner) {
-    //fs_error(LOG_ERR, "INIT loadRDFSTrees");
-    if (subClassOf_node == NULL) {
-        subClassOf_node = get_rdfs_data(reasoner->addr,reasoner->port,RS_GBL_SUBCLASS); 
-    }
-    if (subPropertyOf_node == NULL) {
-        subPropertyOf_node = get_rdfs_data(reasoner->addr,reasoner->port,RS_GBL_SUBPROPERTY); 
-    }
-    if (range_node == NULL) {
-        range_node = get_rdfs_data(reasoner->addr,reasoner->port,RS_GBL_RANGE); 
-        extend_table_with(range_node,subPropertyOf_node);
-        //dumpTable(range_node);
-    }
-    if (domain_node == NULL) {
-        domain_node = get_rdfs_data(reasoner->addr,reasoner->port,RS_GBL_DOMAIN); 
-        //dumpTable(domain_node);
-        extend_table_with(domain_node,subPropertyOf_node);
-        //dumpTable(domain_node);
-    }
-    //fs_error(LOG_ERR, "END loadRDFSTrees");
-}
 
-gboolean append_to_closure(GNode *node, fs_rid_vector* closure) {
+static gboolean append_to_closure(GNode *node, fs_rid_vector* closure) {
 	fs_rid *value = node->data;
     //if (!fs_rid_vector_contains(closure,*value))
 	fs_rid_vector_append(closure,*value);
 	return 0;
 }
 
-void traverse(GNode *node,fs_rid_vector *closure) {
+static void traverse(GNode *node,fs_rid_vector *closure) {
     fs_rid *value = node->data;
     if (!fs_rid_vector_contains(closure,*value))
         fs_rid_vector_append(closure,*value);
@@ -384,7 +345,7 @@ void traverse(GNode *node,fs_rid_vector *closure) {
     }
 }
 
-fs_rid_vector *get_tree_closure(fs_rid *node,GHashTable* nodes, fs_rid_vector *partial) {
+static fs_rid_vector *get_tree_closure(fs_rid *node,GHashTable* nodes, fs_rid_vector *partial) {
     if (!nodes) {
         fs_rid_vector *x = fs_rid_vector_new(0);
         fs_rid_vector_append(x,*node);
@@ -401,8 +362,7 @@ fs_rid_vector *get_tree_closure(fs_rid *node,GHashTable* nodes, fs_rid_vector *p
     return closure;
 }
 
-fs_rid_vector *rdfs_entl_vector(reasoner_conf* reasoner,fs_rid_vector *nodes,int type) {
-   loadRDFSTrees(reasoner);
+static fs_rid_vector *rdfs_entl_vector(fs_rid_vector *nodes,int type) {
    GHashTable *tree = type == RS_GBL_SUBCLASS ? subClassOf_node : subPropertyOf_node;
    if(!tree) {
         return nodes;
@@ -415,27 +375,25 @@ fs_rid_vector *rdfs_entl_vector(reasoner_conf* reasoner,fs_rid_vector *nodes,int
    return res;
 }
 
-fs_rid_vector *rdfs_sub_classes_vector(reasoner_conf *reasoner,fs_rid_vector *nodes) {
-    return rdfs_entl_vector(reasoner,nodes,RS_GBL_SUBCLASS);
+fs_rid_vector *fsr_rdfs_sub_classes_vector(fs_rid_vector *nodes) {
+    return rdfs_entl_vector(nodes,RS_GBL_SUBCLASS);
 }
 
-fs_rid_vector *rdfs_subproperties_vector(reasoner_conf *reasoner,fs_rid_vector *nodes) {
-    fs_rid_vector *res=rdfs_entl_vector(reasoner,nodes,RS_GBL_SUBPROPERTY);
+fs_rid_vector *fsr_rdfs_subproperties_vector(fs_rid_vector *nodes) {
+    fs_rid_vector *res=rdfs_entl_vector(nodes,RS_GBL_SUBPROPERTY);
     return res;
 
 }
 
-fs_rid_vector *rdfs_sub_classes(reasoner_conf *reasoner,fs_rid *node) {
-    loadRDFSTrees(reasoner);
+fs_rid_vector *fsr_rdfs_sub_classes(fs_rid *node) {
     return get_tree_closure(node,subClassOf_node,NULL);
 }
 
-fs_rid_vector *rdfs_sub_properties(reasoner_conf *reasoner,fs_rid *node) {
-    loadRDFSTrees(reasoner);
+fs_rid_vector *fsr_rdfs_sub_properties(fs_rid *node) {
     return get_tree_closure(node,subPropertyOf_node,NULL);
 }
 
-fs_rid_vector *get_super_nodes(const fs_rid *node,GHashTable* nodes) {
+static fs_rid_vector *get_super_nodes(const fs_rid *node,GHashTable* nodes) {
     if (!nodes) {
         fs_rid_vector *x = fs_rid_vector_new(0);
         fs_rid_vector_append(x,*node);
@@ -454,7 +412,7 @@ fs_rid_vector *get_super_nodes(const fs_rid *node,GHashTable* nodes) {
     return closure;
 }
 
-fs_rid *get_new_quad_for(fs_rid m,fs_rid s,fs_rid p,fs_rid o) {
+fs_rid *fsr_get_new_quad_for(fs_rid m,fs_rid s,fs_rid p,fs_rid o) {
     fs_rid *cpy_quad = calloc(4, sizeof(fs_rid));
     cpy_quad[0]=m;//ENTAIL_GRAPH;
     cpy_quad[1]=s;
@@ -467,7 +425,7 @@ gint compare_quads(const fs_rid *qA,const fs_rid *qB) {
     return ((qA[1] == qB[1]) && (qA[2] == qB[2]) && (qA[3] == qB[3])) ? 0 : 1;
 }
 
-int controlled_append(GList **list,fs_rid *quad) {
+int fsr_controlled_append(GList **list,fs_rid *quad) {
     if (quad[0] == FS_RID_NULL || quad[0] == ENTAIL_GRAPH) {
     if (!g_list_find_custom(*list,quad,(GCompareFunc) compare_quads)) {
         *list=g_list_append(*list,quad);
@@ -478,21 +436,20 @@ int controlled_append(GList **list,fs_rid *quad) {
 
 }
 
-int rdfs_extend_quads(reasoner_conf *reasoner,const fs_rid source_quad[],GList **entailments,
-                      int bind_flags,int limit,int *count) {
-
-    loadRDFSTrees(reasoner);
+int fsr_rdfs_extend_quads(const fs_rid source_quad[],GList **entailments,
+                      int bind_flags,int limit,int *count,int reasoning) {
 
     int added_quads = 0;
     int iindex = 0;
 
     fs_rid_vector *closure = NULL;
 
-    if (source_quad[2] == RDF_TYPE_RID || source_quad[2] == RDFS_SUBCLASS_RID) {
+    if (FSR_DO_SC(reasoning) && (source_quad[2] == RDF_TYPE_RID || source_quad[2] == RDFS_SUBCLASS_RID)) {
         iindex = 3;
         closure = get_super_nodes(&source_quad[3],subClassOf_node);
     } else {
-        if (source_quad[2] == RDFS_RANGE_RID || source_quad[2] == RDFS_DOMAIN_RID) {
+        if ((FSR_DO_RAN(reasoning) && source_quad[2] == RDFS_RANGE_RID)
+            || (FSR_DO_DOM(reasoning) && source_quad[2] == RDFS_DOMAIN_RID)) {
             iindex = 3;
             fs_rid_set *setc =(fs_rid_set *) g_hash_table_lookup(source_quad[2] == RDFS_RANGE_RID ? 
                                           range_node : 
@@ -500,7 +457,7 @@ int rdfs_extend_quads(reasoner_conf *reasoner,const fs_rid source_quad[],GList *
                                           &source_quad[1]);
             closure = fs_rid_vector_new(0);
             fs_rid_vector_append_set(closure,setc);
-        } else {
+        } else if (FSR_DO_SP(reasoning)) {
             iindex = source_quad[2] == RDFS_SUBPROPERTY_RID ? 3 : 2;
             closure = get_super_nodes(&source_quad[iindex],subPropertyOf_node);
         }
@@ -510,9 +467,9 @@ int rdfs_extend_quads(reasoner_conf *reasoner,const fs_rid source_quad[],GList *
     if (closure && clen!=0) {
         int k;
         for (k=0;k<clen;k++) {
-            fs_rid *cpy_quad = get_new_quad_for(ENTAIL_GRAPH,source_quad[1],source_quad[2],source_quad[3]);
+            fs_rid *cpy_quad = fsr_get_new_quad_for(ENTAIL_GRAPH,source_quad[1],source_quad[2],source_quad[3]);
             cpy_quad[iindex] = closure->data[k];
-            if (controlled_append(entailments,cpy_quad)) {
+            if (fsr_controlled_append(entailments,cpy_quad)) {
    
             added_quads++;
             if (!(limit > *count))
@@ -524,14 +481,13 @@ int rdfs_extend_quads(reasoner_conf *reasoner,const fs_rid source_quad[],GList *
     return added_quads;
 }
 
-int rdfs_extend_quads_domain(reasoner_conf *reasoner, GHashTable *preds_by_subj,fs_rid_vector *subjects,
+int fsr_rdfs_extend_quads_domain(GHashTable *preds_by_subj,fs_rid_vector *subjects,
                              fs_rid_vector *objects, GList **entailments,int bind_flags,int *count) {
     #ifdef DEBUG_RDFS
     fs_error(LOG_ERR, "[IN] rdfs_extend_quads_domain ");
     #endif
     int added_quads=0;
     fs_rid_vector *closure = NULL;
-    loadRDFSTrees(reasoner);
     GList *tmp,*list = NULL;
     if (subjects != NULL) {
         int l = fs_rid_vector_length(subjects);
@@ -558,11 +514,11 @@ int rdfs_extend_quads_domain(reasoner_conf *reasoner, GHashTable *preds_by_subj,
             fs_rid o = closure->data[k];
             if (objects == NULL || fs_rid_vector_contains(objects,o)) {
                 if (!fs_rid_set_contains(added_domains,closure->data[k])) {
-                fs_rid *cpy_quad = get_new_quad_for(ENTAIL_GRAPH,*s_rid,RDF_TYPE_RID,closure->data[k]);
+                fs_rid *cpy_quad = fsr_get_new_quad_for(ENTAIL_GRAPH,*s_rid,RDF_TYPE_RID,closure->data[k]);
                 #if DEBUG_RDFS > 0
                 fs_error(LOG_ERR, "reqd(0) adding [%llx [a] %llx]",*s_rid,closure->data[k]);
                 #endif
-                if (controlled_append(entailments,cpy_quad)) {
+                if (fsr_controlled_append(entailments,cpy_quad)) {
                 fs_rid_set_add(added_domains,closure->data[k]);
                 *count = *count + 1;
                 added_quads++;
@@ -572,11 +528,11 @@ int rdfs_extend_quads_domain(reasoner_conf *reasoner, GHashTable *preds_by_subj,
         }
         if (objects == NULL || fs_rid_vector_contains(objects,r)) {
             if (!fs_rid_set_contains(added_domains,r)) {
-            fs_rid *cpy_quad = get_new_quad_for(ENTAIL_GRAPH,*s_rid,RDF_TYPE_RID,r);
+            fs_rid *cpy_quad = fsr_get_new_quad_for(ENTAIL_GRAPH,*s_rid,RDF_TYPE_RID,r);
             #if DEBUG_RDFS > 0
             fs_error(LOG_ERR, "reqd(1) adding [%llx [a] %llx]",*s_rid,r);
             #endif
-            if (controlled_append(entailments,cpy_quad)) {
+            if (fsr_controlled_append(entailments,cpy_quad)) {
             fs_rid_set_add(added_domains,r);
             *count = *count + 1;
             added_quads++;
@@ -593,3 +549,33 @@ int rdfs_extend_quads_domain(reasoner_conf *reasoner, GHashTable *preds_by_subj,
     return added_quads;
 }
 
+
+unsigned char *fsr_handle_update_cache(fs_segment segment, unsigned int length, unsigned char *content, int type) {
+    fs_rid_vector **binds = fsr_msg_to_mtrx(content);
+    if (type == RS_GBL_SUBCLASS) {
+         if (subClassOf_node) g_hash_table_destroy(subClassOf_node);
+         subClassOf_node = edges_to_tree(binds);
+    } else if  (type == RS_GBL_SUBPROPERTY) {
+         if (subPropertyOf_node) g_hash_table_destroy(subPropertyOf_node);
+         subPropertyOf_node = edges_to_tree(binds);
+    } else if (type == RS_GBL_DOMAIN) {
+         if (domain_node) g_hash_table_destroy(domain_node);
+         domain_node = edges_to_table(binds);
+    } else if (type == RS_GBL_RANGE) {
+         if (range_node) g_hash_table_destroy(range_node);
+         range_node = edges_to_table(binds);
+    } else {
+        fs_error(LOG_ERR,"unknown message type in fsr_handle_update_cache");   
+    }
+    unsigned char *m = message_new(FS_DONE_OK, segment, 0);
+    return m;
+}
+
+void fsr_print_cache_stats(void) {
+    fs_error(LOG_ERR,"subClassOf_node %d subPropertyOf_node %d domain_node %d range_node %d",   
+    subClassOf_node ? g_hash_table_size(subClassOf_node) : 0, 
+    subPropertyOf_node ? g_hash_table_size(subPropertyOf_node) : 0,
+    domain_node ? g_hash_table_size(domain_node) : 0,
+    range_node ? g_hash_table_size(range_node) : 0
+    );
+}

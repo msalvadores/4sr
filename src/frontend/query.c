@@ -51,7 +51,7 @@
 #define DEBUG_SIZE(n, thing) printf("@@ %d * sizeof(%s) = %zd\n", n, #thing, n * sizeof(thing))
 
 static void graph_pattern_walk(fsp_link *link, rasqal_graph_pattern *p, fs_query *q, rasqal_literal *model, int optional, int uni);
-static int fs_handle_query_triple(fs_query *q, int block, rasqal_triple *t);
+static int fs_handle_query_triple(fs_query *q, int block, rasqal_triple *t,int reasoning);
 static int fs_handle_query_triple_multi(fs_query *q, int block, int count, rasqal_triple *t[]);
 static fs_rid const_literal_to_rid(fs_query *q, rasqal_literal *l, fs_rid *attr);
 static void check_variables(fs_query *q, rasqal_expression *e, int dont_select);
@@ -324,7 +324,7 @@ static void tree_compact(fs_query *q)
     } while (done_something);
 }
 
-fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, const char *query, unsigned int flags, int opt_level, int soft_limit, int explain,int no_reasoning)
+fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, const char *query, unsigned int flags, int opt_level, int soft_limit, int explain, int reasoning)
 {
     if (!qs) {
         fs_error(LOG_CRIT, "fs_query_execute() handed NULL query state");
@@ -366,9 +366,6 @@ fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, c
     }
     if (explain) {
         flags |= FS_QUERY_EXPLAIN;
-    }
-    if (no_reasoning) {
-        flags |= REASONER_BIND_OP;
     }
     q->link = link;
     q->segments = fsp_link_segments(link);
@@ -442,7 +439,7 @@ fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, c
         fclose(errout);
     }
 #endif
-        
+    
     for (int i=0; 1; i++) {
         rasqal_data_graph *dg = rasqal_query_get_data_graph(rq, i);
         if (!dg) break;
@@ -547,7 +544,7 @@ fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, c
     }
 
     /* this is where most of the actual work happens */
-    fs_query_process_pattern(q, pattern, vars);
+    fs_query_process_pattern(q, pattern, vars,reasoning);
     if (q->describe) {
         raptor_free_sequence(vars);
     }
@@ -664,7 +661,7 @@ fs_query *fs_query_execute(fs_query_state *qs, fsp_link *link, raptor_uri *bu, c
     return q;
 }
 
-int fs_query_process_pattern(fs_query *q, rasqal_graph_pattern *pattern, raptor_sequence *vars)
+int fs_query_process_pattern(fs_query *q, rasqal_graph_pattern *pattern, raptor_sequence *vars,int reasoning)
 {
     int explain = q->flags & FS_QUERY_EXPLAIN;
 #ifdef DEBUG_MERGE
@@ -797,7 +794,7 @@ int fs_query_process_pattern(fs_query *q, rasqal_graph_pattern *pattern, raptor_
 	    }
             int ret;
             if (chunk == 1) {
-                ret = fs_handle_query_triple(q, i, q->blocks[i].data[j]);
+                ret = fs_handle_query_triple(q, i, q->blocks[i].data[j],reasoning);
             } else {
                 rasqal_triple *in[chunk];
                 for (int k=0; k<chunk; k++) {
@@ -1642,7 +1639,7 @@ static int process_results(fs_query *q, int block, fs_binding *oldb,
     return ret;
 }
 
-static int fs_handle_query_triple(fs_query *q, int block, rasqal_triple *t)
+static int fs_handle_query_triple(fs_query *q, int block, rasqal_triple *t, int reasoning)
 {
     fs_rid_vector *slot[4];
     slot[0] = fs_rid_vector_new(0);
@@ -1692,7 +1689,7 @@ static int fs_handle_query_triple(fs_query *q, int block, rasqal_triple *t)
 	}
 
         fs_bind_cache_wrapper(q->qs, q, 0, tobind | FS_BIND_BY_SUBJECT,
-                 slot, &results, -1, q->order ? -1 : q->soft_limit);
+                 slot, &results, -1, q->order ? -1 : q->soft_limit, reasoning);
 	if (explain) {
 	    char desc[4][DESC_SIZE];
 	    desc_action(tobind, slot, desc);
@@ -1727,7 +1724,7 @@ static int fs_handle_query_triple(fs_query *q, int block, rasqal_triple *t)
 
         char *scope = NULL;
         fs_bind_cache_wrapper(q->qs, q, 1, tobind | FS_BIND_BY_OBJECT,
-                 slot, &results, -1, q->order ? -1 : q->soft_limit);
+                 slot, &results, -1, q->order ? -1 : q->soft_limit, reasoning);
         scope = "NNNN";
 	if (explain) {
 	    char desc[4][DESC_SIZE];
@@ -1760,7 +1757,7 @@ static int fs_handle_query_triple(fs_query *q, int block, rasqal_triple *t)
     }
 
     fs_bind_cache_wrapper(q->qs, q, 1, tobind | FS_BIND_BY_SUBJECT,
-             slot, &results, -1, q->order ? -1 : q->soft_limit);
+             slot, &results, -1, q->order ? -1 : q->soft_limit,reasoning);
     if (explain) {
         char desc[4][DESC_SIZE];
         desc_action(tobind, slot, desc);

@@ -43,7 +43,7 @@
 
 /* #define DEBUG_BRANCH 1 */
 
-GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges);
+GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges,int reasoning);
 void fs_quad_print_resolved(fs_backend *be, fs_rid *quad, int flags, FILE *out);
 
 static int slot_bits[4] = {
@@ -168,8 +168,9 @@ static void bind_results(const fs_rid quad[4], int tobind, fs_rid_vector **ret)
 fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 			     fs_rid_vector *mv, fs_rid_vector *sv,
 			     fs_rid_vector *pv, fs_rid_vector *ov,
-                             int offset, int limit)
+                             int offset, int limit, int reasoning)
 {
+
     if (!(tobind & (FS_BIND_BY_SUBJECT | FS_BIND_BY_OBJECT))) {
 	fs_error(LOG_ERR, "tried to bind without s/o spec");
 
@@ -180,11 +181,8 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
 	return NULL;
     }
-
-    int reasoner_bind = (tobind & REASONER_BIND_OP);
-    int do_rdfs = !reasoner_bind && be->reasoner;
     #ifdef DEBUG_RDFS
-     fs_error(LOG_ERR, "segment %i do_rdfs[%d] reasoner_bind[%d] be->reasoner[%p]",segment,do_rdfs,reasoner_bind,be->reasoner);
+     fs_error(LOG_ERR, "segment %i reasoning[%d] reasoner_bind[%d] be->reasoner[%p]",segment,reasoning,reasoner_bind,be->reasoner);
     #endif
     double then = fs_time();
 
@@ -216,7 +214,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
     }
 
     const int mvl = fs_rid_vector_length(mv);
-    //if (mvl > 0 && !fs_rid_vector_contains(mv,ENTAIL_GRAPH)) {
+    int do_rdfs = reasoning & FSR_DO_NONE(reasoning) ? 0 : reasoning;
     if (mvl > 0 && !fs_rid_vector_contains(mv,ENTAIL_GRAPH) && !(tobind & FS_BIND_MODEL)) {
         do_rdfs= 0;
         #ifdef DEBUG_RDFS
@@ -376,8 +374,8 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
     fs_rid_vector_print_resolved(be,ov,0,stdout);  
     #endif
    fs_rid_vector *pre_preds = NULL;
-   if (do_rdfs && pvl != 0) { //if predicates then extend the predicates with subProp closure
-        fs_rid_vector *extended_predicates = rdfs_subproperties_vector(be->reasoner,pv);
+   if (FSR_DO_SP(do_rdfs) && pvl != 0) { //if predicates then extend the predicates with subProp closure
+        fs_rid_vector *extended_predicates = fsr_rdfs_subproperties_vector(pv);
         pre_preds = pv;
         pv = extended_predicates;
         #ifdef DEBUG_RDFS
@@ -390,11 +388,6 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
    fs_rid_vector *extended_objects = NULL;
    fs_rid_vector *pre_objects = NULL;
 
-
-   int do_rd = 0;
-   #ifdef FS_RDFS_DOMRAN
-   do_rd = 1;
-   #endif
 
    GHashTable* preds_by_sub = NULL;
 
@@ -409,13 +402,13 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
        if (!pt) continue; 
        
-       if (do_rdfs && do_rd && !domain_done) { //rdf:type domain should be inferred only once.
+       if (do_rdfs && (FSR_DO_DOM(reasoning) ||  FSR_DO_RAN(reasoning))  && !domain_done) { //rdf:type domain should be inferred only once.
             if (pred == RDF_TYPE_RID || !pvl) { // if no P then we have to run it either way to expand ?p
             domain_done = 1;
             if (preds_by_sub==NULL)
-                preds_by_sub = get_subject_pred(be,get_rdfs_domains(be->reasoner),get_rdfs_ranges(be->reasoner));
+                preds_by_sub = get_subject_pred(be,fsr_get_rdfs_domains(),fsr_get_rdfs_ranges(),reasoning);
             if (preds_by_sub) {
-                i_ext = rdfs_extend_quads_domain(be->reasoner,preds_by_sub,
+                i_ext = fsr_rdfs_extend_quads_domain(preds_by_sub,
                                                 svl ? sv : NULL,ovl ? ov : NULL,&entailments,tobind,&count);
                 #ifdef DEBUG_RDFS
                     fs_error(LOG_ERR, "segment %i rdfs domain %i triples ",segment,i_ext);
@@ -427,7 +420,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
        if (do_rdfs && ovl != 0) {
            if (pred_is_rdfs(pred)) { 
                 if (!extended_objects) {
-                    extended_objects = rdfs_sub_classes_vector(be->reasoner,ov);
+                    extended_objects = fsr_rdfs_sub_classes_vector(ov);
                     pre_objects = ov;
                     #ifdef DEBUG_RDFS
                     fs_error(LOG_ERR, "segment %i objects extended  %i->%i",
@@ -460,7 +453,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                     if (!graph_ok(quad, tobind)) continue;
                     if (do_rdfs && ( 
                          (pred_is_rdfs(pred) && ovl == 0) || pvl == 0) ) {
-                        i_ext = rdfs_extend_quads(be->reasoner,quad,&entailments,tobind,limit,&count);
+                        i_ext = fsr_rdfs_extend_quads(quad,&entailments,tobind,limit,&count,reasoning);
                         #ifdef DEBUG_RDFS
                         fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
                         #endif
@@ -469,8 +462,8 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                     if ((pre_preds && !fs_rid_vector_contains(pre_preds,quad[2])) ||
                         (pre_objects && !fs_rid_vector_contains(pre_objects,quad[3]))) { 
                             quad[0]=ENTAIL_GRAPH;
-                            fs_rid *cpy_quad = get_new_quad_for(quad[0],quad[1],quad[2],quad[3]);
-                            if (controlled_append(&entailments,cpy_quad)) {
+                            fs_rid *cpy_quad = fsr_get_new_quad_for(quad[0],quad[1],quad[2],quad[3]);
+                            if (fsr_controlled_append(&entailments,cpy_quad)) {
                                 count++;
                              }
                     }
@@ -506,7 +499,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                         if (!bind_same(quad, tobind)) continue;
                         if (!graph_ok(quad, tobind)) continue;
                         if (do_rdfs && ( ( pred_is_rdfs(pred) && ovl == 0) || pvl == 0) ) {
-                            i_ext = rdfs_extend_quads(be->reasoner,quad,&entailments,tobind,limit,&count);
+                            i_ext = fsr_rdfs_extend_quads(quad,&entailments,tobind,limit,&count,reasoning);
                             #ifdef DEBUG_RDFS
                             fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
                             #endif
@@ -515,8 +508,8 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                         if ((pre_preds && !fs_rid_vector_contains(pre_preds,quad[2])) ||
                             (pre_objects && !fs_rid_vector_contains(pre_objects,quad[3]))) { 
                                 quad[0]=ENTAIL_GRAPH;
-                                fs_rid *cpy_quad = get_new_quad_for(quad[0],quad[1],quad[2],quad[3]);
-                                if (controlled_append(&entailments,cpy_quad)) {
+                                fs_rid *cpy_quad = fsr_get_new_quad_for(quad[0],quad[1],quad[2],quad[3]);
+                                if (fsr_controlled_append(&entailments,cpy_quad)) {
                                     count++;
                                  }
                         }
@@ -536,8 +529,8 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
    #ifdef DEBUG_RDFS
    fs_error(LOG_ERR, "segment-->%i count-->%i entailments-->%i",segment,count, g_list_length(entailments));
    #endif
-   if (do_rdfs && g_list_length(entailments) > 0) {
-        entailments = get_equads_assignment(segment,entailments,be->reasoner);
+   if ((FSR_DO_DOM(reasoning) || FSR_DO_RAN(reasoning)) && g_list_length(entailments) > 0) {
+        //entailments = get_equads_assignment(segment,entailments);
    }
    while(entailments) {
         fs_rid *q = (fs_rid *) entailments->data;
@@ -947,52 +940,59 @@ fs_data_size fs_get_data_size(fs_backend *be, int seg)
     return ret;
 }
 
-GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges) {
+GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges, int reasoning) {
+       fs_error(LOG_ERR, "get_subject_predi domains [%i] ranges [%i] ",g_list_length(g_hash_table_get_keys(domains)),
+       g_list_length(g_hash_table_get_keys(ranges)));
        #ifdef DEBUG_RDFS
        fs_error(LOG_ERR, "get_subject_predi domains [%i] ranges [%i] ",g_list_length(g_hash_table_get_keys(domains)),
        g_list_length(g_hash_table_get_keys(ranges)));
        #endif
        GHashTable* lookup = g_hash_table_new( (GHashFunc) fs_rid_hash, (GEqualFunc) fs_rid_equal);
-       GList *list = g_hash_table_get_keys(domains);
-       fs_rid_set *dom_preds = NULL;
+       GList *list = NULL;
        fs_rid pred;
-       while(list) {
-           pred = *((fs_rid *) list->data);
-           fs_ptree *pt = fs_backend_get_ptree(be, pred, 0);
-           if (pt) {
-                fs_ptree_it *it = fs_ptree_traverse(pt, FS_RID_NULL);
-                dom_preds = g_hash_table_lookup(domains,&pred);
-                if (dom_preds) {
-                    fs_rid quad[4] = { FS_RID_NULL, 
-                                   FS_RID_NULL,
-                                   pred, 
-                                   FS_RID_NULL };
-                    while (it && fs_ptree_traverse_next(it, quad)) {
-                        add_elto_set(lookup,&quad[1],dom_preds);
+       if (FSR_DO_DOM(reasoning)) {
+           fs_rid_set *dom_preds = NULL;
+           list = g_hash_table_get_keys(domains);
+           while(list) {
+               pred = *((fs_rid *) list->data);
+               fs_ptree *pt = fs_backend_get_ptree(be, pred, 0);
+               if (pt) {
+                    fs_ptree_it *it = fs_ptree_traverse(pt, FS_RID_NULL);
+                    dom_preds = g_hash_table_lookup(domains,&pred);
+                    if (dom_preds) {
+                        fs_rid quad[4] = { FS_RID_NULL, 
+                                       FS_RID_NULL,
+                                       pred, 
+                                       FS_RID_NULL };
+                        while (it && fs_ptree_traverse_next(it, quad)) {
+                            fsr_add_elto_set(lookup,&quad[1],dom_preds);
+                        }
                     }
-                }
+               }
+               list = g_list_next(list);
            }
-           list = g_list_next(list);
        }
-       list = g_hash_table_get_keys(ranges);
-       fs_rid_set *ranges_pred = NULL;
-       while(list) {
-           pred = *((fs_rid *) list->data);
-           fs_ptree *pt = fs_backend_get_ptree(be, pred, 1);
-           if (pt) {
-                fs_ptree_it *it = fs_ptree_traverse(pt, FS_RID_NULL);
-                ranges_pred = g_hash_table_lookup(ranges,&pred);
-                if (ranges_pred) {
-                    fs_rid quad[4] = { FS_RID_NULL, 
-                                   FS_RID_NULL,
-                                   pred, 
-                                   FS_RID_NULL };
-                    while (it && fs_ptree_traverse_next(it, quad)) {
-                        add_elto_set(lookup,&quad[1],ranges_pred);
+       if (FSR_DO_RAN(reasoning)) {
+           list = g_hash_table_get_keys(ranges);
+           fs_rid_set *ranges_pred = NULL;
+           while(list) {
+               pred = *((fs_rid *) list->data);
+               fs_ptree *pt = fs_backend_get_ptree(be, pred, 1);
+               if (pt) {
+                    fs_ptree_it *it = fs_ptree_traverse(pt, FS_RID_NULL);
+                    ranges_pred = g_hash_table_lookup(ranges,&pred);
+                    if (ranges_pred) {
+                        fs_rid quad[4] = { FS_RID_NULL, 
+                                       FS_RID_NULL,
+                                       pred, 
+                                       FS_RID_NULL };
+                        while (it && fs_ptree_traverse_next(it, quad)) {
+                            fsr_add_elto_set(lookup,&quad[1],ranges_pred);
+                        }
                     }
-                }
+               }
+               list = g_list_next(list);
            }
-           list = g_list_next(list);
        }
        //fs_error(LOG_ERR,"subjects type inferred table");
        //dumpTable(lookup);

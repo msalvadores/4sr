@@ -208,7 +208,7 @@ int main(int argc, char *argv[])
   int ans = 0;
 
   if (all) {
-    ans = fsp_bind_limit_all(link, flags, mrids, srids, prids, orids, &result, offset, limit);
+    ans = fsp_bind_limit_all(link, flags, mrids, srids, prids, orids, &result, offset, limit, 0);
   } else if (many) {
     ans = fsp_bind_limit_many(link, flags, mrids, srids, prids, orids, &result, offset, limit);
   } else {

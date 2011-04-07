@@ -20,7 +20,7 @@
 fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 			     fs_rid_vector *mv, fs_rid_vector *sv,
 			     fs_rid_vector *pv, fs_rid_vector *ov,
-                             int offset, int limit);
+                             int offset, int limit, int reasoning);
 
 /* WARNING: check code, this function does not behave like fs_bind() even
  * though it has the same signature */
