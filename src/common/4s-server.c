@@ -473,11 +473,7 @@ void fsp_serve (const char *kb_name, fsp_backend *backend, int daemon, float dis
   }
 
   signal_actions();
-  #ifdef FS_RDFS_DOMRAN
-  fs_error(LOG_INFO, "4store backend %s for kb %s on port %s RDFS enabled: subClassOf, subPropertyOf, domain and range)", FS_BACKEND_VER, kb_name, cport);
-  #else
-  fs_error(LOG_INFO, "4store backend %s for kb %s on port %s RDFS enabled: subClassOf, subPropertyOf)", FS_BACKEND_VER, kb_name, cport);
-  #endif
+  fs_error(LOG_INFO, "4store backend %s for kb %s on port %s [4sr reasoning included]", FS_BACKEND_VER, kb_name, cport);
   GIOChannel *listener = g_io_channel_unix_new (srv);
   g_io_add_watch(listener, G_IO_IN, accept_fn, backend);
 

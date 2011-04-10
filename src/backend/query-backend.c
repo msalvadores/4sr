@@ -170,7 +170,6 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 			     fs_rid_vector *pv, fs_rid_vector *ov,
                              int offset, int limit, int reasoning)
 {
-
     if (!(tobind & (FS_BIND_BY_SUBJECT | FS_BIND_BY_OBJECT))) {
 	fs_error(LOG_ERR, "tried to bind without s/o spec");
 
@@ -182,7 +181,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 	return NULL;
     }
     #ifdef DEBUG_RDFS
-     fs_error(LOG_ERR, "segment %i reasoning[%d] reasoner_bind[%d] be->reasoner[%p]",segment,reasoning,reasoner_bind,be->reasoner);
+     fs_error(LOG_ERR, "segment %i reasoning[%d]",segment,reasoning);
     #endif
     double then = fs_time();
 
@@ -362,8 +361,8 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
    int tree_object_flag = by_subject ? 0 : 1;
    int i_ext=0;   
     #ifdef DEBUG_RDFS
-    fs_error(LOG_ERR, "segment %i do_rdfs %i nloops %i reasoner_bind %i reasoner_conf %p",
-                       segment,do_rdfs,nloops,reasoner_bind,be->reasoner);
+    fs_error(LOG_ERR, "segment %i do_rdfs %i nloops %i", 
+                       segment,do_rdfs,nloops);
     fprintf(stderr,"mv:");
     fs_rid_vector_print_resolved(be,mv,0,stdout);  
     fprintf(stderr,"sv:");
@@ -501,7 +500,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                         if (do_rdfs && ( ( pred_is_rdfs(pred) && ovl == 0) || pvl == 0) ) {
                             i_ext = fsr_rdfs_extend_quads(quad,&entailments,tobind,limit,&count,reasoning);
                             #ifdef DEBUG_RDFS
-                            fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
+                            fs_error(LOG_ERR, "segment %i rdfs extend %i triples %llx",segment,i_ext,pred);
                             #endif
                         }
                         //fs_quad_print_resolved(be,quad,0,stderr);

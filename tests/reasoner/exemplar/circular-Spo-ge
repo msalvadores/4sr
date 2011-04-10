@@ -1,5 +1,0 @@
-<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://example.org/ns/c1>
-<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://example.org/ns/c2>
-<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://example.org/ns/c3>
-<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://example.org/ns/x>
-?p	?t

@@ -48,7 +48,7 @@
 /* Internal flags for reasoner level */
 
 #define FSR_NULL_FLAG   00000
-#define FSR_NONE_FLAG   02000
+#define FSR_NONE_FLAG   00000
 #define FSR_DOMAIN_FLAG 00001
 #define FSR_RANGE_FLAG  00002 
 #define FSR_SUBP_FLAG   00004
@@ -59,7 +59,8 @@
 #define FSR_DO_SP(x)   (x & FSR_SUBP_FLAG)
 #define FSR_DO_DOM(x)   (x & FSR_DOMAIN_FLAG)
 #define FSR_DO_RAN(x)   (x & FSR_RANGE_FLAG)
-#define FSR_DO_NONE(x)   (x & FSR_NONE_FLAG)
+#define FSR_DO_NONE(x)   (x == FSR_NONE_FLAG)
+#define FSR_DO_SOME(x)   (x != FSR_NONE_FLAG)
 
 unsigned char * fsr_mtrx_to_msg(int type,fs_rid_vector **mtx,int cols);
 fs_rid_vector **fsr_msg_to_mtrx(unsigned char *msg);

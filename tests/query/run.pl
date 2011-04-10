@@ -2,7 +2,7 @@
 
 use Term::ANSIColor;
 
-$kb_name = "query_test_".$ENV{'USER'}." -n ";
+$kb_name = "query_test_".$ENV{'USER'};
 
 # names of tests that require LAQRS support
 my @need_laqrs = ('count', 'union-nobind');

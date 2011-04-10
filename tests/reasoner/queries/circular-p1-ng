@@ -1,5 +1,0 @@
-#!
-
-$TESTPATH/frontend/4s-query -s -1 -O0 $1 'SELECT * WHERE { { ?s <http://example.org/ns/p1> ?o } }' | sort 
-
-

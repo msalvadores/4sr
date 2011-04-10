@@ -446,18 +446,22 @@ int fsr_rdfs_extend_quads(const fs_rid source_quad[],GList **entailments,
 
     if (FSR_DO_SC(reasoning) && (source_quad[2] == RDF_TYPE_RID || source_quad[2] == RDFS_SUBCLASS_RID)) {
         iindex = 3;
-        closure = get_super_nodes(&source_quad[3],subClassOf_node);
+        if (subClassOf_node != NULL)
+            closure = get_super_nodes(&source_quad[3],subClassOf_node);
     } else {
         if ((FSR_DO_RAN(reasoning) && source_quad[2] == RDFS_RANGE_RID)
             || (FSR_DO_DOM(reasoning) && source_quad[2] == RDFS_DOMAIN_RID)) {
             iindex = 3;
-            fs_rid_set *setc =(fs_rid_set *) g_hash_table_lookup(source_quad[2] == RDFS_RANGE_RID ? 
-                                          range_node : 
-                                            domain_node,
-                                          &source_quad[1]);
-            closure = fs_rid_vector_new(0);
-            fs_rid_vector_append_set(closure,setc);
-        } else if (FSR_DO_SP(reasoning)) {
+            fs_rid_set *setc = NULL;
+            if (source_quad[2] == RDFS_RANGE_RID && range_node) 
+                setc =(fs_rid_set *) g_hash_table_lookup(range_node,&source_quad[1]);
+            else if (source_quad[2] == RDFS_DOMAIN_RID && domain_node)
+                setc =(fs_rid_set *) g_hash_table_lookup(domain_node,&source_quad[1]);
+            if (setc) {
+                closure = fs_rid_vector_new(0);
+                fs_rid_vector_append_set(closure,setc);
+            }
+        } else if (FSR_DO_SP(reasoning) && subPropertyOf_node != NULL) {
             iindex = source_quad[2] == RDFS_SUBPROPERTY_RID ? 3 : 2;
             closure = get_super_nodes(&source_quad[iindex],subPropertyOf_node);
         }

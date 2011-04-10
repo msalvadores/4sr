@@ -49,7 +49,7 @@ static void interactive(fsp_link *link, raptor_uri *bu, const char *result_forma
 static void programatic_io(fsp_link *link, raptor_uri *bu, const char *query_lang, const char *result_format, fs_query_timing *timing, int verbosity, int opt_level, int result_flags, int soft_limit,raptor_world *rw,int reasoning);
 
 static int show_timing;
-static int default_reasoning = FSR_SUBC_FLAG | FSR_SUBP_FLAG;
+static int default_reasoning = FSR_NONE_FLAG;
 
 static double ftime()
 {
@@ -67,7 +67,6 @@ int main(int argc, char *argv[])
     char *password = fsp_argv_password(&argc, argv);
 
     static char *optstring = "hevf:R:PO:Ib:rs:d";
-    int no_reasoner = 0;
     char *format = getenv("FORMAT");
     char *kb_name = NULL, *query = NULL;
     int programatic = 0, help = 0;
@@ -120,8 +119,6 @@ int main(int argc, char *argv[])
             default_graph = 1;
         } else if (c == 'b') {
             base_uri = optarg;
-        } else if (c == 'n') {
-            no_reasoner = 1;
         } else if (c == 'h') {
             help = 1;
             help_return = 0;
@@ -145,7 +142,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (!no_reasoner) opt_level = 0;
+    opt_level = FSR_DO_SOME(default_reasoning) ? 0 : opt_level;
 
     for (int k = optind; k < argc; ++k) {
         if (!kb_name) {
@@ -228,18 +225,18 @@ int main(int argc, char *argv[])
 
     if (programatic) {
 	programatic_io(link, bu, "sparql", format, timing, verbosity, opt_level,
-            FS_RESULT_FLAG_HEADERS | flags, soft_limit , rw,no_reasoner);
+            FS_RESULT_FLAG_HEADERS | flags, soft_limit , rw, default_reasoning);
     } else if (!query) {
         if (!format) format = "text";
         interactive(link, bu, format, verbosity, opt_level,
-            insert_mode ? FS_RESULT_FLAG_CONSTRUCT_AS_INSERT : flags, soft_limit, rw, no_reasoner);
+            insert_mode ? FS_RESULT_FLAG_CONSTRUCT_AS_INSERT : flags, soft_limit, rw, default_reasoning);
     }
 
     int ret = 0;
 
     fs_query_state *qs = fs_query_init(link, NULL, NULL);
     qs->verbosity = verbosity;
-    
+   
     fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit, explain, default_reasoning);
     
     if (fs_query_errors(qr)) {
@@ -396,7 +393,7 @@ static void save_history_dotfile(void)
     g_free(dotfile);
 }
 
-static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_level, int result_flags, int soft_limit, raptor_world *rw, int no_reasoning)
+static void interactive(fsp_link *link, raptor_uri *bu, const char *result_format, int verbosity, int opt_level, int result_flags, int soft_limit, raptor_world *rw, int reasoning)
 {
     char *query = NULL;
 

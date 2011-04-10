@@ -335,7 +335,7 @@ static void http_query_worker(gpointer data, gpointer user_data)
 {
   client_ctxt *ctxt = (client_ctxt *) data;
   
-  int optlevel = !ctxt->reasoning ? opt_level : 0;
+  int optlevel = FSR_DO_SOME(ctxt->reasoning) ? 0 : opt_level;
 
   ctxt->start_time = fs_time();
   ctxt->qr = fs_query_execute(query_state, fsplink, bu, ctxt->query_string, ctxt->query_flags, optlevel, ctxt->soft_limit, 0, ctxt->reasoning);

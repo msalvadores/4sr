@@ -1,6 +1,0 @@
-<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/c1>
-<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/c2>
-<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/c3>
-<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://example.org/ns/y>
-<http://example.org/ns/circular.ttl>	<http://example.org/ns/c1>
-?g	?t
