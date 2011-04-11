@@ -13,6 +13,13 @@ function sparql {
 	curl -s -H "Accept: text/plain" "$1/sparql/?query=$escaped"
 }
 
+# usage: sparql $endpoint $query $reasoning
+function sparql_reasoning {
+	uriescape "$2";
+	echo "Query: $2"
+	curl -s -H "Accept: text/plain" "$1/sparql/?reasoning=$3&query=$escaped"
+}
+
 # usage: update $endpoint $update
 function update {
         postescape "$2"

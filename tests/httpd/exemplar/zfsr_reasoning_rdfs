@@ -1,0 +1,109 @@
+200 deleted successfully
+This is a 4store SPARQL server [VERSION]
+Query:  PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema> SELECT * WHERE { ?s a ns:classAB . } ORDER BY ?s
+?s
+Update: 
+PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH ns:fsr { ns:indA a ns:classA . ns:indB a ns:classB . ns:indC a ns:classC . ns:indD a ns:classD . ns:classA rdfs:subClassOf ns:classAB . ns:classB rdfs:subClassOf ns:classAB . } }
+
+#after update 1
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:classAB . } ORDER BY ?s 
+?s
+<http://foo.bar/indA>
+<http://foo.bar/indB>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema> SELECT * WHERE { ?s a ?class . FILTER (?s = ns:indA || ?s = ns:indB) .} ORDER BY ?s ?class
+?s	?class
+<http://foo.bar/indA>	<http://foo.bar/classA>
+<http://foo.bar/indA>	<http://foo.bar/classAB>
+<http://foo.bar/indB>	<http://foo.bar/classAB>
+<http://foo.bar/indB>	<http://foo.bar/classB>
+#after 2 subclass queries
+Update: PREFIX ns: <http://foo.bar/>PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH ns:fsr { ns:indA ns:p1 ns:o1 . ns:indB ns:p2 ns:o2 . ns:indC ns:p3 ns:o3 . ns:indD ns:p4 ns:o4 . ns:p1 rdfs:subPropertyOf ns:p . ns:p2 rdfs:subPropertyOf ns:p . ns:p3 rdfs:subPropertyOf ns:p0 . ns:p4 rdfs:subPropertyOf ns:p0 . ns:p0 rdfs:subPropertyOf ns:p . ns:classC rdfs:subClassOf ns:class0 . ns:classD rdfs:subClassOf ns:class0 . ns:classAB rdfs:subClassOf ns:class0 . } }
+
+#after update 2
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s  ns:p ?o . } ORDER BY ?s ?o
+?s	?o
+<http://foo.bar/indA>	<http://foo.bar/o1>
+<http://foo.bar/indB>	<http://foo.bar/o2>
+<http://foo.bar/indC>	<http://foo.bar/o3>
+<http://foo.bar/indD>	<http://foo.bar/o4>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s  ns:p0 ?o . } ORDER BY ?s ?o
+?s	?o
+<http://foo.bar/indC>	<http://foo.bar/o3>
+<http://foo.bar/indD>	<http://foo.bar/o4>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s  ns:p1 ?o . } ORDER BY ?s ?o
+?s	?o
+<http://foo.bar/indA>	<http://foo.bar/o1>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:class0 . ?s  ns:p1 ?o . } ORDER BY ?s ?o
+?s	?o
+<http://foo.bar/indA>	<http://foo.bar/o1>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:class0 . ?s  ns:p ?o . } ORDER BY ?s ?o
+?s	?o
+<http://foo.bar/indA>	<http://foo.bar/o1>
+<http://foo.bar/indB>	<http://foo.bar/o2>
+<http://foo.bar/indC>	<http://foo.bar/o3>
+<http://foo.bar/indD>	<http://foo.bar/o4>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ns:indA ?p ?o } ORDER BY ?p ?o
+?p	?o
+<http://foo.bar/p>	<http://foo.bar/o1>
+<http://foo.bar/p1>	<http://foo.bar/o1>
+<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/class0>
+<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/classA>
+<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/classAB>
+start domain/range
+Update: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH ns:fsr { ns:p1 rdfs:domain ns:dom1 .  ns:p1 rdfs:range ns:ran1 . ns:p0 rdfs:domain ns:dom0 . ns:p0 rdfs:range ns:ran0 . } }
+
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ns:indA ?p ?o } ORDER BY ?p ?o
+?p	?o
+<http://foo.bar/p>	<http://foo.bar/o1>
+<http://foo.bar/p1>	<http://foo.bar/o1>
+<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/class0>
+<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/classA>
+<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/classAB>
+<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/dom1>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:ran0 } ORDER BY ?s
+?s
+<http://foo.bar/o3>
+<http://foo.bar/o4>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:ran0 } ORDER BY ?s
+?s
+<http://foo.bar/o3>
+<http://foo.bar/o4>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:dom1 } ORDER BY ?s
+?s
+<http://foo.bar/indA>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { GRAPH ?g { ns:p3 ?p ?o } } ORDER BY ?g ?p ?o
+?g	?p	?o
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>	<http://foo.bar/p>
+<http://foo.bar/fsr>	<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>	<http://foo.bar/p0>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { GRAPH ?g { ns:classA ?p ?o } } ORDER BY ?g ?p ?o
+?g	?p	?o
+<http://4sreasoner.ecs.soton.ac.uk/entailedgraph/>	<http://www.w3.org/2000/01/rdf-schema#subClassOf>	<http://foo.bar/class0>
+<http://foo.bar/fsr>	<http://www.w3.org/2000/01/rdf-schema#subClassOf>	<http://foo.bar/classAB>
+Query: PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { GRAPH <http://4sreasoner.ecs.soton.ac.uk/entailedgraph/> { ?s ?p ?o } } ORDER BY ?s ?p ?o
+?s	?p	?o
+<http://foo.bar/classA>	<http://www.w3.org/2000/01/rdf-schema#subClassOf>	<http://foo.bar/class0>
+<http://foo.bar/classB>	<http://www.w3.org/2000/01/rdf-schema#subClassOf>	<http://foo.bar/class0>
+<http://foo.bar/indA>	<http://foo.bar/p>	<http://foo.bar/o1>
+<http://foo.bar/indA>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/class0>
+<http://foo.bar/indA>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/classAB>
+<http://foo.bar/indA>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/dom1>
+<http://foo.bar/indB>	<http://foo.bar/p>	<http://foo.bar/o2>
+<http://foo.bar/indB>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/class0>
+<http://foo.bar/indB>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/classAB>
+<http://foo.bar/indC>	<http://foo.bar/p>	<http://foo.bar/o3>
+<http://foo.bar/indC>	<http://foo.bar/p0>	<http://foo.bar/o3>
+<http://foo.bar/indC>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/class0>
+<http://foo.bar/indC>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/dom0>
+<http://foo.bar/indD>	<http://foo.bar/p>	<http://foo.bar/o4>
+<http://foo.bar/indD>	<http://foo.bar/p0>	<http://foo.bar/o4>
+<http://foo.bar/indD>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/class0>
+<http://foo.bar/indD>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/dom0>
+<http://foo.bar/o1>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/ran1>
+<http://foo.bar/o3>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/ran0>
+<http://foo.bar/o4>	<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>	<http://foo.bar/ran0>
+<http://foo.bar/p0>	<http://www.w3.org/2000/01/rdf-schema#domain>	<http://foo.bar/dom0>
+<http://foo.bar/p0>	<http://www.w3.org/2000/01/rdf-schema#range>	<http://foo.bar/ran0>
+<http://foo.bar/p1>	<http://www.w3.org/2000/01/rdf-schema#domain>	<http://foo.bar/dom1>
+<http://foo.bar/p1>	<http://www.w3.org/2000/01/rdf-schema#range>	<http://foo.bar/ran1>
+<http://foo.bar/p3>	<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>	<http://foo.bar/p>
+<http://foo.bar/p4>	<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>	<http://foo.bar/p>

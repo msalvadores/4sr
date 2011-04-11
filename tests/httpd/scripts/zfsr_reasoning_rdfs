@@ -1,0 +1,46 @@
+#!/bin/bash
+
+source sparql.sh
+delete "$EPR" 'http://foo.bar/'
+sparql "$EPR" ' PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema> SELECT * WHERE { ?s a ns:classAB . } ORDER BY ?s'
+
+update "$EPR" '
+PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH ns:fsr { ns:indA a ns:classA . ns:indB a ns:classB . ns:indC a ns:classC . ns:indD a ns:classD . ns:classA rdfs:subClassOf ns:classAB . ns:classB rdfs:subClassOf ns:classAB . } }'
+echo '#after update 1'
+
+sparql "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:classAB . } ORDER BY ?s '
+
+sparql "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema> SELECT * WHERE { ?s a ?class . FILTER (?s = ns:indA || ?s = ns:indB) .} ORDER BY ?s ?class'
+echo "#after 2 subclass queries"
+
+update "$EPR" 'PREFIX ns: <http://foo.bar/>PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH ns:fsr { ns:indA ns:p1 ns:o1 . ns:indB ns:p2 ns:o2 . ns:indC ns:p3 ns:o3 . ns:indD ns:p4 ns:o4 . ns:p1 rdfs:subPropertyOf ns:p . ns:p2 rdfs:subPropertyOf ns:p . ns:p3 rdfs:subPropertyOf ns:p0 . ns:p4 rdfs:subPropertyOf ns:p0 . ns:p0 rdfs:subPropertyOf ns:p . ns:classC rdfs:subClassOf ns:class0 . ns:classD rdfs:subClassOf ns:class0 . ns:classAB rdfs:subClassOf ns:class0 . } }'
+echo '#after update 2'
+
+sparql "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s  ns:p ?o . } ORDER BY ?s ?o'
+
+sparql "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s  ns:p0 ?o . } ORDER BY ?s ?o'
+
+sparql "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s  ns:p1 ?o . } ORDER BY ?s ?o'
+
+sparql "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:class0 . ?s  ns:p1 ?o . } ORDER BY ?s ?o'
+
+sparql "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:class0 . ?s  ns:p ?o . } ORDER BY ?s ?o'
+
+sparql "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ns:indA ?p ?o } ORDER BY ?p ?o'
+
+echo "start domain/range"
+
+update "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH ns:fsr { ns:p1 rdfs:domain ns:dom1 .  ns:p1 rdfs:range ns:ran1 . ns:p0 rdfs:domain ns:dom0 . ns:p0 rdfs:range ns:ran0 . } }'
+
+sparql_reasoning "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ns:indA ?p ?o } ORDER BY ?p ?o' 'CPDR'
+
+sparql_reasoning "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:ran0 } ORDER BY ?s' 'CPDR'
+
+sparql_reasoning "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:ran0 } ORDER BY ?s' 'CPDR'
+
+sparql_reasoning "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { ?s a ns:dom1 } ORDER BY ?s' 'CPDR'
+
+sparql_reasoning "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { GRAPH ?g { ns:p3 ?p ?o } } ORDER BY ?g ?p ?o' 'P'
+sparql_reasoning "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { GRAPH ?g { ns:classA ?p ?o } } ORDER BY ?g ?p ?o' 'C'
+
+sparql_reasoning "$EPR" 'PREFIX ns: <http://foo.bar/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT * WHERE { GRAPH <http://4sreasoner.ecs.soton.ac.uk/entailedgraph/> { ?s ?p ?o } } ORDER BY ?s ?p ?o' 'CPDR'
