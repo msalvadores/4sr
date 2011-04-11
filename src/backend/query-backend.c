@@ -940,8 +940,6 @@ fs_data_size fs_get_data_size(fs_backend *be, int seg)
 }
 
 GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges, int reasoning) {
-       fs_error(LOG_ERR, "get_subject_predi domains [%i] ranges [%i] ",g_list_length(g_hash_table_get_keys(domains)),
-       g_list_length(g_hash_table_get_keys(ranges)));
        #ifdef DEBUG_RDFS
        fs_error(LOG_ERR, "get_subject_predi domains [%i] ranges [%i] ",g_list_length(g_hash_table_get_keys(domains)),
        g_list_length(g_hash_table_get_keys(ranges)));

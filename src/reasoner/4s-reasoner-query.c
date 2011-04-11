@@ -122,10 +122,12 @@ reasoner_cache *fsr_load_reasoner_cache(fsp_link *link) {
     free_double_fs_rid_vector(fsr_cache.domain_bind);
     fsr_cache.domain_bind = rdfs_domain_stmts(link);
     fsr_cache.domain_msg = fsr_mtrx_to_msg(RS_GBL_DOMAIN,fsr_cache.domain_bind,2); 
-    
+   
+    /*
     fs_error(LOG_ERR,"fsr_cache warmed up [%i subClassOf(s)][%i subPropertyOf(s)][%i domain(s)][%i range(s)]",
     fsr_cache.subClassOf_bind[0]->length,fsr_cache.subProperty_bind[0]->length,
     fsr_cache.domain_bind[0]->length,fsr_cache.range_bind[0]->length);
+    */
     return &fsr_cache;
 }
 
@@ -138,14 +140,10 @@ reasoner_cache *fsr_get_reasoner_cache() {
 
 int fsr_init_reasoner (fsp_link* link)
 {
-  fs_error(LOG_ERR,"init");
   reasoner_cache *rc = fsr_load_reasoner_cache(link);
-  fs_error(LOG_ERR,"loaded");
   fsr_send_cache_to_segments(link,rc->subClassOf_msg);
   fsr_send_cache_to_segments(link,rc->subProperty_msg);
   fsr_send_cache_to_segments(link,rc->domain_msg);
   fsr_send_cache_to_segments(link,rc->range_msg);
-  fs_error(LOG_ERR,"end");
-
   return 0;
 }

@@ -17,14 +17,13 @@
 #include "common/error.h"
 #include "backend/backend-intl.h"
 
+
 static fs_rid_vector *get_tree_closure(fs_rid *node,GHashTable* nodes, fs_rid_vector *partial);
 
 static GHashTable* subClassOf_node = NULL;
 static GHashTable* subPropertyOf_node = NULL;
 static GHashTable* range_node = NULL;
 static GHashTable* domain_node = NULL;
-
-//static unsigned char fsp_vermagic[4] = { 'I', 'D', FS_PROTO_VER_MINOR, 0x0 };
 
 GHashTable *fsr_get_rdfs_domains() {
     return domain_node;
@@ -67,142 +66,6 @@ static void add_1elto_set(GHashTable* lookup,fs_rid *rid,fs_rid *elto) {
     fs_rid_set_add(s,*elto);
 }
 
-/*
-static GList *get_assignment_list(unsigned char *mess,GList *origin) {
-    unsigned char *data = mess + FS_HEADER;
-    unsigned int * const l = (unsigned int *) (mess + 4);
-    int elements = *l / sizeof(int);
-    GList *ret=NULL;
-    int *elto = NULL;
-    for(int i=0;i<elements;i++) {
-        elto = calloc(1,sizeof(int));
-        memcpy(elto,data,sizeof(int));
-        data += sizeof(int);
-        GList *e = g_list_nth(origin,*elto);
-        fs_rid *q = e->data;
-        ret=g_list_append(ret,q);
-    }
-    return ret;
-}
-
-static unsigned char * request_msg(int type, size_t data_length) {
-	unsigned char *buffer = calloc(1, FS_HEADER + data_length);
-	unsigned int * const l = (unsigned int *) (buffer + 4);
-	*l = (unsigned int) data_length;
-	buffer[3] = (unsigned char) type;
-	return buffer;
-}
-
-
-GList *get_equads_assignment(fs_segment segment,GList *entailments) {
-    size_t data_length = g_list_length(entailments) * 24;
-    unsigned char *buffer = request_msg(RS_QUAD_ASSIGN,data_length); 
-    unsigned int * const s = (unsigned int *) (buffer + 8);
-    *s = segment;
-    unsigned char *data = buffer + FS_HEADER;
-    GList *tmp = entailments;
-    while(tmp) {
-        memcpy(data, tmp->data+8, 24);//+8 to skip q[0] and add q[1,2,3]
-        data += 24;
-        tmp=g_list_next(tmp); 
-    }
-    int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    unsigned int count = send_message(sckt_cl,reasoner->addr,reasoner->port,buffer,FS_HEADER + data_length);
-    if (count == 0) {
-        fs_error(LOG_ERR,"assign message no bytes written on send to %s:%i",
-            reasoner->addr,reasoner->port);
-        return NULL;
-    }        
-    unsigned char *resp = reasoner_recv(sckt_cl, &count);
-    if (!resp) {
-        fs_error(LOG_ERR,"no resp to assign, this potentially provokes duplicates");
-    }
-    GList *assign = get_assignment_list(resp,entailments);
-    if (resp)
-        free(resp);
-    if (buffer)
-        free(buffer);
-    g_list_free(entailments);
-    return assign;
-}
-
-unsigned char * send_receive(unsigned char *msg,size_t len,const char *addr,int port,size_t *resp_len) {
-        fs_error(LOG_ERR,"addr %s",addr);
-    unsigned char *req = msg;
-    struct sockaddr_in st_sckt_addr;
-    int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    int res;
-    unsigned int count;
-    if (-1 == sckt_cl) {
-        fs_error(LOG_ERR,"Error creating client soccket");
-        return NULL;
-    }
-    memset(&st_sckt_addr, 0, sizeof(struct sockaddr_in));
-    
-    st_sckt_addr.sin_family = AF_INET;
-    st_sckt_addr.sin_port = htons(port);
-    res = inet_pton(AF_INET, addr, &st_sckt_addr.sin_addr);
-
-    if (0 > res) {
-      fs_error(LOG_ERR,"error: first parameter is not a valid address family");
-      close(sckt_cl);
-      return NULL;
-    }
-    else if (0 == res) {
-      fs_error(LOG_ERR,"char string (second parameter does not contain valid ipaddress");
-      close(sckt_cl);
-      return NULL;
-    }
-
-    if (-1 == connect(sckt_cl, (const struct sockaddr *)&st_sckt_addr, sizeof(struct sockaddr_in))) {
-      fs_error(LOG_ERR,"connect failed");
-      close(sckt_cl);
-      return NULL;
-    }
-
-    count = write(sckt_cl, req, len);
-    *resp_len=(size_t)count;
-    unsigned char *resp = reasoner_recv(sckt_cl, &count);
-    close(sckt_cl);
-    return resp;
-}
-
-static unsigned int send_message(int sckt_cl,char *addr,int port,unsigned char *msg, int len) {
-    struct sockaddr_in st_sckt_addr;
-    int res;
-    unsigned int count;
-    if (-1 == sckt_cl) {
-        fs_error(LOG_ERR,"Error creating client socket");
-        return 0;
-    }
-    memset(&st_sckt_addr, 0, sizeof(struct sockaddr_in));
-    
-    st_sckt_addr.sin_family = AF_INET;
-    st_sckt_addr.sin_port = htons(port);
-    res = inet_pton(AF_INET, addr, &st_sckt_addr.sin_addr);
-
-    if (0 > res) {
-      fs_error(LOG_ERR,"error: first parameter is not a valid address family");
-      close(sckt_cl);
-      return 0;
-    }
-    else if (0 == res) {
-      fs_error(LOG_ERR,"char string (second parameter does not contain valid ipaddress");
-      close(sckt_cl);
-      return 0;
-    }
-
-    if (-1 == connect(sckt_cl, (const struct sockaddr *)&st_sckt_addr, sizeof(struct sockaddr_in))) {
-      fs_error(LOG_ERR,"connect failed");
-      close(sckt_cl);
-      return 0;
-    }
-
-    count = write(sckt_cl, msg, len);
-    return count;
-}
-
-*/
 
 gboolean fsr_rid_equal(fs_rid *v1,fs_rid *v2) {
 	return *v1==*v2;
@@ -250,63 +113,6 @@ static GHashTable* edges_to_table(fs_rid_vector **edges) {
 	}
 	return node_lookup;
 }
-/*
-GHashTable* get_rdfs_data(char *addr,int port,int type) {
-    unsigned char *req = request_msg(type,0);
-    int sckt_cl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    unsigned int count = send_message(sckt_cl,addr,port,req,FS_HEADER);
-    if (count == 0) {
-        fs_error(LOG_ERR,"no bytes written on send type %i to  %s:%i",type,addr,port);
-        return NULL;
-    }
-    unsigned char *msg = reasoner_recv(sckt_cl, &count);
-    close(sckt_cl);
-    fs_rid_vector **binds = msg_to_mtrx(msg);
-    #ifdef DEBUG_RDFS
-    //int elts = binds ? binds[0]->length : 0;
-    //fs_error(LOG_ERR,"requesting reasoner %s:%i type request %c --> %i",addr,port,type,elts);
-    #endif
-    GHashTable* nodes = NULL;
-    if (type == RS_GBL_SUBCLASS || type == RS_GBL_SUBPROPERTY) {
-        nodes = edges_to_tree(binds);
-    }
-    else {
-        nodes = edges_to_table(binds);
-    }
-    return nodes;
-}
-
-static void extend_table_with(GHashTable *table,GHashTable *hierarchy) {
-    if ((g_hash_table_size(table) == 0)  || (g_hash_table_size(hierarchy) == 0 ))
-        return;
-
-    GList *tmp,*list = NULL;
-    list = g_hash_table_get_keys(hierarchy);
-    tmp = list;
-    while(tmp) {
-        fs_rid *rid = tmp->data;
-        fs_rid_set *d = g_hash_table_lookup(table,rid);
-        if (d) {
-            fs_rid_vector *c  = get_tree_closure(rid,hierarchy,NULL);
-            int cl = fs_rid_vector_length(c);
-            for (int i=0;i<cl;i++) {
-               fs_rid_set *sd = g_hash_table_lookup(table,&c->data[i]);
-               if (!sd) {
-                    sd = fs_rid_set_new();
-                    g_hash_table_insert(table,&c->data[i],sd);
-               }
-               fs_rid r;
-               while((r=fs_rid_set_next(d))!=FS_RID_NULL) {
-                    fs_rid_set_add(sd,r);
-               }
-               fs_rid_set_rewind(d);
-            }
-            //fs_rid_vector_free(c);
-        }
-        tmp = g_list_next(tmp);
-    }
-}
-*/
 
 void fsr_dumpTable(GHashTable *table) {
     GList *tmp,*list = NULL;
@@ -323,10 +129,8 @@ void fsr_dumpTable(GHashTable *table) {
     }
 }
 
-
 static gboolean append_to_closure(GNode *node, fs_rid_vector* closure) {
 	fs_rid *value = node->data;
-    //if (!fs_rid_vector_contains(closure,*value))
 	fs_rid_vector_append(closure,*value);
 	return 0;
 }
@@ -506,7 +310,7 @@ int fsr_rdfs_extend_quads_domain(GHashTable *preds_by_subj,fs_rid_vector *subjec
     fs_rid_set *added_domains = fs_rid_set_new();
     tmp = g_list_next (tmp);
     fs_rid_set *s = (fs_rid_set *) g_hash_table_lookup(preds_by_subj,s_rid);
-    #if DEBUG_RDFS > 0
+    #if DEBUG_RDFS
     fs_error(LOG_ERR, "s_rid %llx types %p",*s_rid,s);
     #endif
     if (s) {
@@ -519,7 +323,7 @@ int fsr_rdfs_extend_quads_domain(GHashTable *preds_by_subj,fs_rid_vector *subjec
             if (objects == NULL || fs_rid_vector_contains(objects,o)) {
                 if (!fs_rid_set_contains(added_domains,closure->data[k])) {
                 fs_rid *cpy_quad = fsr_get_new_quad_for(ENTAIL_GRAPH,*s_rid,RDF_TYPE_RID,closure->data[k]);
-                #if DEBUG_RDFS > 0
+                #if DEBUG_RDFS
                 fs_error(LOG_ERR, "reqd(0) adding [%llx [a] %llx]",*s_rid,closure->data[k]);
                 #endif
                 if (fsr_controlled_append(entailments,cpy_quad)) {
@@ -553,6 +357,36 @@ int fsr_rdfs_extend_quads_domain(GHashTable *preds_by_subj,fs_rid_vector *subjec
     return added_quads;
 }
 
+static void extend_table_with(GHashTable *table,GHashTable *hierarchy) {
+    if ((g_hash_table_size(table) == 0)  || (g_hash_table_size(hierarchy) == 0 ))
+        return;
+
+    GList *tmp,*list = NULL;
+    list = g_hash_table_get_keys(hierarchy);
+    tmp = list;
+    while(tmp) {
+        fs_rid *rid = tmp->data;
+        fs_rid_set *d = g_hash_table_lookup(table,rid);
+        if (d) {
+            fs_rid_vector *c  = get_tree_closure(rid,hierarchy,NULL);
+            int cl = fs_rid_vector_length(c);
+            for (int i=0;i<cl;i++) {
+               fs_rid_set *sd = g_hash_table_lookup(table,&c->data[i]);
+               if (!sd) {
+                    sd = fs_rid_set_new();
+                    g_hash_table_insert(table,&c->data[i],sd);
+               }
+               fs_rid r;
+               while((r=fs_rid_set_next(d))!=FS_RID_NULL) {
+                    fs_rid_set_add(sd,r);
+               }
+               fs_rid_set_rewind(d);
+            }
+            //fs_rid_vector_free(c);
+        }
+        tmp = g_list_next(tmp);
+    }
+}
 
 unsigned char *fsr_handle_update_cache(fs_segment segment, unsigned int length, unsigned char *content, int type) {
     fs_rid_vector **binds = fsr_msg_to_mtrx(content);
@@ -565,9 +399,13 @@ unsigned char *fsr_handle_update_cache(fs_segment segment, unsigned int length, 
     } else if (type == RS_GBL_DOMAIN) {
          if (domain_node) g_hash_table_destroy(domain_node);
          domain_node = edges_to_table(binds);
+         /* subProperty gets updated always first, so we can do this here */
+         extend_table_with(domain_node,subPropertyOf_node);
     } else if (type == RS_GBL_RANGE) {
          if (range_node) g_hash_table_destroy(range_node);
          range_node = edges_to_table(binds);
+         /* subProperty gets updated always first, so we can do this here */
+         extend_table_with(range_node,subPropertyOf_node);
     } else {
         fs_error(LOG_ERR,"unknown message type in fsr_handle_update_cache");   
     }
