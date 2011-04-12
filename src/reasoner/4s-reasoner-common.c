@@ -6,7 +6,7 @@
 #include <glib.h>
 
 #include "common/4s-internals.h"
-#include "common/datatypes.h"
+#include "common/4s-datatypes.h"
 #include "common/params.h"
 #include "common/error.h"
 

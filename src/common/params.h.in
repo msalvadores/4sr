@@ -77,8 +77,4 @@
 #define FS_INSERT_DEDUP
 #endif
 
-#if @FS_RDFS_DOMRAN@
-#define FS_RDFS_DOMRAN
-#endif
-
 #endif

@@ -14,7 +14,7 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__FreeBSD__) 
 #define _XOPEN_SOURCE 500
 #endif
 #include <stdlib.h>
@@ -31,7 +31,6 @@
 #include "mhash.h"
 #include "tbchain.h"
 #include "../common/params.h"
-#include "../common/hash.h"
 #include "../common/error.h"
 
 #define FS_MHASH_DEFAULT_LENGTH         4096

@@ -21,4 +21,6 @@ GList *fsr_get_equads_assignment(fs_segment segment,GList *entailments);
 unsigned char *fsr_handle_update_cache(fs_segment segment,unsigned int length, unsigned char *content, int type);
 void fsr_print_cache_stats();
 void fsr_dumpTable(GHashTable *table);
+gboolean fsr_rid_equal(fs_rid *v1,fs_rid *v2);
+guint fsr_rid_hash(fs_rid *v);
 #endif

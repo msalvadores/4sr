@@ -34,13 +34,13 @@
 #include <glib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 
 #include <rasqal.h>
 
 #include "4store-config.h"
 #include "../common/4store.h"
 #include "../common/error.h"
-#include "../common/hash.h"
 #include "../common/gnu-options.h"
 
 #include "../frontend/query.h"
@@ -127,7 +127,12 @@ static void query_log_reopen ()
 static void query_log (client_ctxt *ctxt, const char *query)
 {
   if (ql_file) {
-    fprintf(ql_file, "##### Q%u\n%s\n", ctxt->query_id, query);
+    time_t now = time(NULL);
+    struct tm *ts = gmtime(&now);
+    char time_str[21];
+    strftime(time_str, sizeof(time_str), "%Y-%m-%dT%H:%M:%SZ", ts);
+
+    fprintf(ql_file, "##### %s Q%u\n%s\n", time_str, ctxt->query_id, query);
     fflush(ql_file);
   }
 }
@@ -372,6 +377,7 @@ static void http_query_worker(gpointer data, gpointer user_data)
 
   const char *accept = g_hash_table_lookup(ctxt->headers, "accept");
 
+  int rows_returned = -1;
   fcntl(ctxt->sock, F_SETFL, 0 /* not O_NONBLOCK */); /* blocking */
   FILE *fp = fdopen(dup(ctxt->sock), "a+");
   if (fp != NULL) {
@@ -400,6 +406,7 @@ static void http_query_worker(gpointer data, gpointer user_data)
       flags = 0;
     }
     fs_query_results_output(ctxt->qr, type, flags, fp);
+    rows_returned = ctxt->qr->rows_output;
     fs_query_free(ctxt->qr);
     ctxt->qr = NULL;
     free(ctxt->query_string);
@@ -411,8 +418,15 @@ static void http_query_worker(gpointer data, gpointer user_data)
 
     fclose(fp);
   }
+
   if (ql_file) {
-    fprintf(ql_file, "#### execution time for Q%u: %fs\n", ctxt->query_id, fs_time() - ctxt->start_time);
+    if (rows_returned > -1) {
+      fprintf(ql_file, "#### execution time for Q%u: %fs, returned %d rows.\n", ctxt->query_id, fs_time() - ctxt->start_time, rows_returned);
+    }
+    else {
+      fprintf(ql_file, "#### execution time for Q%u: %fs\n", ctxt->query_id, fs_time() - ctxt->start_time);
+    }
+
     fflush(ql_file);
   }
   http_close(ctxt);

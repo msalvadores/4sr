@@ -30,9 +30,10 @@
 #include "query-intl.h"
 #include "filter.h"
 #include "debug.h"
-#include "../common/hash.h"
+#include "../common/4s-hash.h"
 #include "../common/error.h"
 #include "../common/rdf-constants.h"
+#include "../common/4s-internals.h"
 #include "../reasoner/4s-reasoner-common.h"
 
 #define CACHE_SIZE 65536
@@ -916,6 +917,11 @@ static raptor_term *slot_fill(fs_query *q, rasqal_literal *l, fs_row *row)
 	    }
 	}
         if (FS_IS_BNODE(b->rid)) {
+            if(strcmp(b->lex, "NULL") == 0) {
+                /* b->lex is the string "NULL", so return as is */
+                return raptor_new_term_from_blank(q->qs->raptor_world, (unsigned char *)b->lex);
+            }
+
             return raptor_new_term_from_blank(q->qs->raptor_world, (unsigned char *)b->lex+2);
         } else if (FS_IS_URI(b->rid)) {
             return raptor_new_term_from_uri_string(q->qs->raptor_world, (unsigned char *)b->lex);
@@ -1496,6 +1502,15 @@ static void handle_construct(fs_query *q, const char *type, FILE *output)
                 st.subject = slot_fill(q, trip->subject, row);
                 st.predicate = slot_fill(q, trip->predicate, row);
                 st.object = slot_fill(q, trip->object, row);
+
+                if (st.object->type == RAPTOR_TERM_TYPE_BLANK && strcmp((char *)st.object->value.blank.string, "NULL") == 0) {
+                    /* bnodes with an id of "NULL" should not be rendered */
+                    raptor_free_term(st.subject);
+                    raptor_free_term(st.predicate);
+                    raptor_free_term(st.object);
+                    continue;
+                }
+
                 raptor_serializer_serialize_statement(q->ser, &st);
                 raptor_free_term(st.subject);
                 raptor_free_term(st.predicate);
@@ -1603,7 +1618,7 @@ static void output_sparql(fs_query *q, int flags, FILE *out)
             }
         } else {
             fprintf(out, "  <results>\n");
-            while (!row->stop && (row = fs_query_fetch_row(q))) {
+            while ((!row || !row->stop) && (row = fs_query_fetch_row(q))) {
                 fprintf(out, "    <result>\n");
                 for (int c=0; c<cols; c++) {
                     int esc_len;
@@ -1721,7 +1736,7 @@ static void output_text(fs_query *q, int flags, FILE *out)
     if (q->construct) {
         handle_construct(q, "ntriples", out);
     } else {
-	while (!row->stop && (row = fs_query_fetch_row(q))) {
+	while ((!row || !row->stop) && (row = fs_query_fetch_row(q))) {
 	    for (int c=0; c<cols; c++) {
 		int esclen = 0;
 		char *escd = NULL;
@@ -1815,7 +1830,8 @@ static void output_json(fs_query *q, int flags, FILE *out)
 
     const int cols = fs_query_get_columns(q);
 
-    fs_row *header = fs_query_fetch_header_row(q);
+    fs_row *row, *header;
+    row = header = fs_query_fetch_header_row(q);
     fprintf(out, "{\"head\":{\"vars\":[");
     for (int i=0; i<cols; i++) {
         if (i) fputs(",", out);
@@ -1833,7 +1849,6 @@ static void output_json(fs_query *q, int flags, FILE *out)
     } else {
         fprintf(out, " \"results\": {\n");
         fprintf(out, "  \"bindings\":[");
-        fs_row *row;
         int rownum = 0;
         while ((!row || !row->stop) && (row = fs_query_fetch_row(q))) {
             if (rownum++ > 0) {
@@ -1974,7 +1989,7 @@ static void output_testcase(fs_query *q, int flags, FILE *out)
         return;
     }
 
-    while (!row->stop && (row = fs_query_fetch_row(q))) {
+    while ((!row || !row->stop) && (row = fs_query_fetch_row(q))) {
 	fprintf(out, " ;\n   rs:solution [\n");
         if (q->ordering) {
             static int index = 0;

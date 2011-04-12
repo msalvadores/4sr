@@ -15,7 +15,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #define _XOPEN_SOURCE 600
 #endif
 #include <stdlib.h>
@@ -33,9 +33,9 @@
 #include "rhash.h"
 #include "list.h"
 #include "prefix-trie.h"
-#include "common/params.h"
-#include "common/hash.h"
-#include "common/error.h"
+#include "../common/4s-hash.h"
+#include "../common/params.h"
+#include "../common/error.h"
 #include "reasoner/4s-reasoner-common.h"
 
 #define FS_RHASH_DEFAULT_LENGTH        65536

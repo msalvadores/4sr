@@ -8,6 +8,7 @@ AM_INIT_AUTOMAKE([1.7 std-options -Wall])
 AM_CONFIG_HEADER(4store-config.h)
 
 # Checks for programs.
+AC_PROG_LIBTOOL
 AC_PROG_AWK
 AC_PROG_CC
 AC_PROG_INSTALL
@@ -33,13 +34,6 @@ AC_ARG_ENABLE([dedup-insert],
                         [don't allow duplicate triples when inserting data])],
 	[FS_INSERT_DEDUP=1])
 AC_SUBST(FS_INSERT_DEDUP)
-
-FS_RDFS_DOMRAN=0
-AC_ARG_ENABLE([rdfs-domain-range],
-	[AS_HELP_STRING([--enable-rdfs-domain-range],
-                        [don't inference RDFS domain and ranges, only subClass and subProperty])],
-	[FS_RDFS_DOMRAN=1;])
-AC_SUBST(FS_RDFS_DOMRAN)
 
 FS_DISABLE_PREFIXES=0
 AC_ARG_ENABLE([no-prefixes],
@@ -121,7 +115,8 @@ AC_CONFIG_FILES([version.sh
                  src/libs/stemmer/Makefile
                  src/utilities/Makefile
                  src/reasoner/Makefile
-                 src/common/params.h])
+                 src/common/params.h
+                 4store-0.pc])
 AC_OUTPUT
 
 raptor_version=`$PKG_CONFIG raptor2 --modversion 2>/dev/null`
@@ -139,10 +134,4 @@ fi
 echo "   Using Raptor version $raptor_version"
 echo "   Using Rasqal version $rasqal_version"
 
-echo "   RDFS Reasoner Included"
-if test  "$FS_RDFS_DOMRAN" = 0; then
-echo "   RDFS semantics enabled: rdfs:subClassOf with rdf:type and rdfs:subPropertyOf"
-echo "   (to enable rdfs:domain and rdfs:range add --enable-rdfs-domain-range when running configure)"
-else
-echo "   RDFS semantics enabled: rdfs:subClassOf, rdfs:range, rdfs:domain with rdf:type and rdfs:subPropertyOf"
-fi
+echo "   RDFS Reasoner Included (4sr)"

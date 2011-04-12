@@ -1,7 +1,7 @@
 #ifndef _4SR_COMM_H  /* duplication check */
 #define _4SR_COMM_H
 
-#include "common/datatypes.h"
+#include "common/4s-datatypes.h"
 
 #define RS_GBL_SUBCLASS 0x51
 #define RS_GBL_SUBCLASS_RESP 0x52

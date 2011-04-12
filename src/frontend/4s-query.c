@@ -37,9 +37,7 @@
 #include "results.h"
 #include "query-datatypes.h"
 #include "../common/4store.h"
-#include "../common/datatypes.h"
 #include "../common/params.h"
-#include "../common/hash.h"
 #include "../common/error.h"
 
 #include "../reasoner/4s-reasoner-query.h"

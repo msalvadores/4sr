@@ -1,7 +1,7 @@
 
 #include "common/4s-internals.h"
 
-#include "common/datatypes.h"
+#include "common/4s-datatypes.h"
 #include "common/params.h"
 #include "common/error.h"
 #include "4s-reasoner-common.h"

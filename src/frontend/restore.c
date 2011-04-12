@@ -22,7 +22,7 @@
 #include <stdlib.h>
 
 #include "../common/4store.h"
-#include "../common/hash.h"
+#include "../common/server.h"
 #include "../common/error.h"
 
 int main(int argc, char *argv[])

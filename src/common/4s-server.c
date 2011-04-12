@@ -36,6 +36,7 @@
 #include <syslog.h>
 #include <netdb.h>
 #include <glib.h>
+#include <netinet/in.h>
 
 #include "../reasoner/4s-reasoner-common.h" 
 #include "../reasoner/4s-reasoner-backend.h" 

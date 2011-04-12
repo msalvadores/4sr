@@ -28,9 +28,7 @@
 #include <errno.h>
 
 #include "../common/timing.h"
-#include "../common/datatypes.h"
 #include "../common/error.h"
-#include "../common/hash.h"
 #include "tlist.h"
 #include "backend.h"
 #include "backend-intl.h"
@@ -944,7 +942,7 @@ GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *rang
        fs_error(LOG_ERR, "get_subject_predi domains [%i] ranges [%i] ",g_list_length(g_hash_table_get_keys(domains)),
        g_list_length(g_hash_table_get_keys(ranges)));
        #endif
-       GHashTable* lookup = g_hash_table_new( (GHashFunc) fs_rid_hash, (GEqualFunc) fs_rid_equal);
+       GHashTable* lookup = g_hash_table_new( (GHashFunc) fsr_rid_hash, (GEqualFunc) fsr_rid_equal);
        GList *list = NULL;
        fs_rid pred;
        if (FSR_DO_DOM(reasoning)) {
