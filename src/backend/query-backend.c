@@ -262,7 +262,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
     /* if the query looks like DISINTCT (_ _ p ?o) we can use a set to get a
      * cheap DISTINCT */
-    if (cols == 1 && ((tobind & (FS_BIND_MODEL | FS_BIND_SUBJECT | 
+    if (!do_rdfs && cols == 1 && ((tobind & (FS_BIND_MODEL | FS_BIND_SUBJECT | 
 	FS_BIND_PREDICATE | FS_BIND_OBJECT)) == FS_BIND_OBJECT) && tobind &
 	FS_BIND_DISTINCT && mvl == 0 && svl == 0 && pvl == 1 && ovl == 0) {
 	fs_ptree *pt = fs_backend_get_ptree(be, pv->data[0], 0);
