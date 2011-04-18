@@ -885,15 +885,38 @@ static void http_query_widget(client_ctxt *ctxt)
   "<h2>KB ");
   http_send(ctxt, fsp_kb_name(fsplink));
   http_send(ctxt, "</h2>\n");
+  http_send(ctxt, "<script>\n"
+  "function submitForm() {\n"
+  "var valReasoning = '';\n"
+  "if (document.forms[0].rdfsC.checked) valReasoning += 'C';\n"
+  "if (document.forms[0].rdfsP.checked) valReasoning += 'P';\n"
+  "if (document.forms[0].rdfsR.checked) valReasoning += 'R';\n"
+  "if (document.forms[0].rdfsD.checked) valReasoning += 'D';\n"
+  "if (document.forms[0].rdfsN.checked) valReasoning += 'N';\n"
+  "document.forms[0].reasoning.value = valReasoning;\n"
+  "document.forms[0].submit();\n"
+  "}\n</script>\n");
 
   http_send(ctxt, "<form action=\"../sparql/\" method=\"post\">\n"
-   "<textarea name=\"query\" cols=\"80\" rows=\"18\">\n"
+   "<table><tr valign=\"top\"><td><textarea name=\"query\" cols=\"80\" rows=\"18\">\n"
    "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
    "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
-   "\nSELECT * WHERE {\n ?s ?p ?o\n} LIMIT 10\n"
-   "</textarea><br>\n"
+   "\nSELECT DISTINCT ?o WHERE {\n ?s rdf:type ?o\n} LIMIT 10\n"
+   "</textarea></td><td>\n"
+   "<em>Reasoning</em><br/><br/> <input type=\"CHECKBOX\"  id=\"rdfsC\" name=\"rdfsC\">rdfs:subClassOf<br/>\n"
+   "<input type=\"CHECKBOX\" id=\"rdfsP\" name=\"rdfsP\">rdfs:subPropertyOf<br/>"
+   "<input type=\"CHECKBOX\" id=\"rdfsD\" name=\"rdfsD\">rdfs:domain<br/>"
+   "<input type=\"CHECKBOX\" id=\"rdfsR\" name=\"rdfsR\">rdfs:range<br/>"
+   "<input type=\"CHECKBOX\" id=\"rdfsN\" name=\"rdfsN\">None<br/>"
+   "<input type=\"hidden\" id=\"reasoning\" name=\"reasoning\">"
+   "<br/><span>Reasoning by default:</span><br/><span><b>");
+   gchar *level_res = fsr_reasoning_level_string(default_reasoning);
+   http_send(ctxt,level_res);
+   free(level_res);
+    http_send(ctxt,"</b></span></td></tr></table>\n"
    "<em>Soft limit</em> <input type=\"text\" name=\"soft-limit\">\n"
-   "<input type=\"submit\" value=\"Execute\"><input type=\"reset\">\n"
+   "<br/>"
+   "<input type=\"button\" onClick=\"javascript:submitForm();\" value=\"Execute\"><input type=\"reset\">\n"
    "</form>\n");
 
   http_send(ctxt, "</body></html>\n");
@@ -949,7 +972,8 @@ static void http_get_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         default_graph = value;
       }
       else if (!strcmp(key, "reasoning")) {
-        ctxt->reasoning = fsr_reasoning_level_flag(value);
+        if (value && strlen(value)) 
+          ctxt->reasoning = fsr_reasoning_level_flag(value);
       }
       qs = next;
     }
@@ -1080,6 +1104,7 @@ static void http_post_request(client_ctxt *ctxt, gchar *url, gchar *protocol)
         default_graph = value;
       }
       else if (!strcmp(key, "reasoning")) {
+        if (value && strlen(value)) 
           ctxt->reasoning = fsr_reasoning_level_flag(value);
       }
       qs = next;
