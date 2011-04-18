@@ -1708,7 +1708,7 @@ static void output_text(fs_query *q, int flags, FILE *out)
         return;
     }
 
-    fs_row *row;
+    fs_row *row=NULL;
 
     int cols = fs_query_get_columns(q);
     if (!q->construct) {
@@ -1904,11 +1904,7 @@ static void output_json(fs_query *q, int flags, FILE *out)
     if (q->warnings) {
         fprintf(out, ",\n \"warnings\": [");
         GSList *it;
-        int count = 0;
         for (it = q->warnings; it; it = it->next) {
-            if (count++) {
-                printf(", ");
-            }
             char *text = it->data;
             char *escd = NULL;
             int esclen = 0;
@@ -1917,6 +1913,9 @@ static void output_json(fs_query *q, int flags, FILE *out)
                 text = escd;
             }
             fprintf(out, "\"%s\"", text);
+            if (it->next)
+                fprintf(out, ",\n");
+
             if (escd) free(escd);
         }
         g_slist_free(q->warnings);
@@ -2129,7 +2128,20 @@ nextrow: ;
 
     /* handle aggregates */
     if (q->aggregate && (q->aggregate < 2 || q->group_by)) {
-        if (q->row >= q->length) {
+        if (q->length == 0) {
+            fs_rid_vector *groups = fs_binding_get_vals(q->bt, "_group", NULL);
+            if (groups) {
+                /* GROUP BY + no rows , we stop */
+                return NULL;
+            }
+            /* if not GROUP BY + no rows , we evaluate */
+            q->resrow->stop = 1;
+            for (int i=0; i<q->num_vars; i++) {
+               fs_value val = fs_expression_eval(q, 0, 0, q->bt[i+1].expression);
+               fs_value_to_row(q, val, q->resrow+i);
+            }
+            return q->resrow;
+        } else if (q->row >= q->length) {
             return NULL;
         }
         fs_rid_vector *groups = fs_binding_get_vals(q->bt, "_group", NULL);
@@ -2174,7 +2186,7 @@ nextrow: ;
     const int rows = q->length;
     if (q->limit >= 0 && q->rows_output >= q->limit) {
         if (grows) fs_rid_vector_free(grows);
-	return NULL;
+        return NULL;
     }
     if (q->row >= rows) {
 	if (fsp_hit_limits(q->link)) {
@@ -2184,7 +2196,7 @@ nextrow: ;
 	    fs_query_add_freeable(q, msg);
 	}
         if (grows) fs_rid_vector_free(grows);
-	return NULL;
+        return NULL;
     }
 
     if (!q->resrow) {
