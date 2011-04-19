@@ -234,7 +234,8 @@ int main(int argc, char *argv[])
 
     fs_query_state *qs = fs_query_init(link, NULL, NULL);
     qs->verbosity = verbosity;
-   
+    if (default_reasoning)
+        fsr_init_reasoner(link);
     fs_query *qr = fs_query_execute(qs, link, bu, query, flags, opt_level, soft_limit, explain, default_reasoning);
     
     if (fs_query_errors(qr)) {
