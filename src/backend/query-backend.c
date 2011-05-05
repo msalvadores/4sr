@@ -163,6 +163,14 @@ static void bind_results(const fs_rid quad[4], int tobind, fs_rid_vector **ret)
     }
 }
 
+static gint compare_quads(gconstpointer a,  gconstpointer b) {
+    return memcmp(*(fs_rid **)a,*(fs_rid **)b,4 * sizeof(fs_rid));
+}
+
+static void append_keys_vector(gpointer key, gpointer value, gpointer user_data) {
+    fs_rid_vector_append((fs_rid_vector *)user_data,*((fs_rid *)key));
+}
+
 fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 			     fs_rid_vector *mv, fs_rid_vector *sv,
 			     fs_rid_vector *pv, fs_rid_vector *ov,
@@ -212,6 +220,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
 
     const int mvl = fs_rid_vector_length(mv);
     int do_rdfs = reasoning & FSR_DO_NONE(reasoning) ? 0 : reasoning;
+
     if (mvl > 0 && !fs_rid_vector_contains(mv,ENTAIL_GRAPH) && !(tobind & FS_BIND_MODEL)) {
         do_rdfs= 0;
         #ifdef DEBUG_RDFS
@@ -386,10 +395,9 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
    fs_rid_vector *pre_objects = NULL;
 
 
-   GHashTable* preds_by_sub = NULL;
-
    int domain_done = 0;
-   GList *entailments = NULL;
+   GPtrArray *entailments = g_ptr_array_new();
+   class_membership_dr *dr_members = NULL;
 
    for (int p=0; p<pi && count<limit; p++) {
        if (!pvl) fs_backend_ptree_limited_open(be,p);
@@ -402,11 +410,20 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
        if (do_rdfs && (FSR_DO_DOM(reasoning) ||  FSR_DO_RAN(reasoning))  && !domain_done) { //rdf:type domain should be inferred only once.
             if (pred == RDF_TYPE_RID || !pvl) { // if no P then we have to run it either way to expand ?p
             domain_done = 1;
-            if (preds_by_sub==NULL)
-                preds_by_sub = get_subject_pred(be,fsr_get_rdfs_domains(),fsr_get_rdfs_ranges(),reasoning);
-            if (preds_by_sub) {
-                i_ext = fsr_rdfs_extend_quads_domain(preds_by_sub,
-                                                svl ? sv : NULL,ovl ? ov : NULL,&entailments,tobind,&count);
+            dr_members = fsr_get_class_membership_dr();
+            if (!dr_members->lookup) {
+                GHashTable *preds_by_sub = get_subject_pred(be,fsr_get_rdfs_domains(),fsr_get_rdfs_ranges(),reasoning);
+                fs_rid_vector *preds_by_sub_keys = fs_rid_vector_new(0);
+                g_hash_table_foreach(preds_by_sub, append_keys_vector ,preds_by_sub_keys);
+                fsr_set_class_membership_dr(preds_by_sub,preds_by_sub_keys);
+                #if DEBUG_RDFS > 2
+                    fs_error(FS_ERROR,"preds_by_sub_keys");
+                    fs_rid_vector_print(preds_by_sub_keys,0,stdout); 
+                #endif
+            }
+            if (dr_members->lookup) {
+                i_ext = fsr_rdfs_extend_quads_domain_range(dr_members->lookup,
+                                                svl ? sv : dr_members->keys, ovl ? ov : NULL,entailments,tobind,&count);
                 #ifdef DEBUG_RDFS
                     fs_error(LOG_ERR, "segment %i rdfs domain %i triples ",segment,i_ext);
                 #endif
@@ -450,9 +467,10 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                     if (!graph_ok(quad, tobind)) continue;
                     if (do_rdfs && ( 
                          (pred_is_rdfs(pred) && ovl == 0) || pvl == 0) ) {
-                        i_ext = fsr_rdfs_extend_quads(quad,&entailments,tobind,limit,&count,reasoning);
-                        #ifdef DEBUG_RDFS
-                        fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
+                        i_ext = fsr_rdfs_extend_quads(quad,entailments,tobind,limit,&count,reasoning);
+                        #if DEBUG_RDFS > 2
+                        if (i_ext)
+                            fs_error(LOG_ERR, "segment %i rdfs extend %i triples ",segment,i_ext);
                         #endif
                     }
                     //fs_quad_print_resolved(be,quad,0,stderr);
@@ -460,7 +478,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                         (pre_objects && !fs_rid_vector_contains(pre_objects,quad[3]))) { 
                             quad[0]=ENTAIL_GRAPH;
                             fs_rid *cpy_quad = fsr_get_new_quad_for(quad[0],quad[1],quad[2],quad[3]);
-                            if (fsr_controlled_append(&entailments,cpy_quad)) {
+                            if (fsr_controlled_append(entailments,cpy_quad)) {
                                 count++;
                              }
                     }
@@ -496,7 +514,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                         if (!bind_same(quad, tobind)) continue;
                         if (!graph_ok(quad, tobind)) continue;
                         if (do_rdfs && ( ( pred_is_rdfs(pred) && ovl == 0) || pvl == 0) ) {
-                            i_ext = fsr_rdfs_extend_quads(quad,&entailments,tobind,limit,&count,reasoning);
+                            i_ext = fsr_rdfs_extend_quads(quad,entailments,tobind,limit,&count,reasoning);
                             #ifdef DEBUG_RDFS
                             fs_error(LOG_ERR, "segment %i rdfs extend %i triples %llx",segment,i_ext,pred);
                             #endif
@@ -506,7 +524,7 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
                             (pre_objects && !fs_rid_vector_contains(pre_objects,quad[3]))) { 
                                 quad[0]=ENTAIL_GRAPH;
                                 fs_rid *cpy_quad = fsr_get_new_quad_for(quad[0],quad[1],quad[2],quad[3]);
-                                if (fsr_controlled_append(&entailments,cpy_quad)) {
+                                if (fsr_controlled_append(entailments,cpy_quad)) {
                                     count++;
                                  }
                         }
@@ -524,23 +542,32 @@ fs_rid_vector **fs_bind(fs_backend *be, fs_segment segment, unsigned int tobind,
        }
    }
    #ifdef DEBUG_RDFS
-   fs_error(LOG_ERR, "segment-->%i count-->%i entailments-->%i",segment,count, g_list_length(entailments));
+   fs_error(LOG_ERR, "segment-->%i count-->%i entailments-->%i",segment,count, entailments->len);
    #endif
-   if ((FSR_DO_DOM(reasoning) || FSR_DO_RAN(reasoning)) && g_list_length(entailments) > 0) {
-        //entailments = get_equads_assignment(segment,entailments);
-   }
-   while(entailments) {
-        fs_rid *q = (fs_rid *) entailments->data;
-        #ifdef DEBUG_RDFS
-        fs_error(LOG_ERR, "adding entailment %llx %llx %llx %llx",q[0],q[1],q[2],q[3]);
-        #endif
-        if (!bind_same(q, tobind)) continue;
-        if (!graph_ok(q, tobind)) continue;
-        bind_results(q, tobind, ret);
-        entailments=g_list_next(entailments);
+   if (entailments) {
+       #if DEBUG_RDFS
+       fs_error(LOG_ERR, "adding entailments ...");
+       #endif
+       g_ptr_array_sort(entailments,(GCompareFunc) compare_quads);
+       for (int ie = 0; ie < entailments->len; ie++) {
+            fs_rid *q = (fs_rid *) g_ptr_array_index(entailments,ie);
+            if (ie > 0 && !compare_quads(&q,&g_ptr_array_index(entailments,ie-1))) /* dup elimination */
+                continue;
+            
+            #ifdef DEBUG_RDFS
+            fs_error(LOG_ERR, "adding entailment %llx %llx %llx %llx",q[0],q[1],q[2],q[3]);
+            #endif 
+            if (!bind_same(q, tobind)) continue;
+            if (!graph_ok(q, tobind)) continue;
+            bind_results(q, tobind, ret);
+            free(q);
+       }
+       #if DEBUG_RDFS
+       fs_error(LOG_ERR, "done!");
+       #endif
    }
    if (entailments) 
-       g_list_free(entailments);
+       g_ptr_array_free(entailments,TRUE);
    if (looper)
        free(looper);
     TIME("bind");
@@ -937,16 +964,22 @@ fs_data_size fs_get_data_size(fs_backend *be, int seg)
     return ret;
 }
 
+void destroy_key(gpointer key) {
+    free(key);
+}
+void destroy_val(gpointer val) {
+    g_array_free((GArray *)val,TRUE);
+}
+
 GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *ranges, int reasoning) {
        #ifdef DEBUG_RDFS
-       fs_error(LOG_ERR, "get_subject_predi domains [%i] ranges [%i] ",g_list_length(g_hash_table_get_keys(domains)),
-       g_list_length(g_hash_table_get_keys(ranges)));
+       fs_error(LOG_ERR, "get_subject_predi domains [%i] ranges [%i] ",g_hash_table_size(domains),g_hash_table_size(ranges));
        #endif
-       GHashTable* lookup = g_hash_table_new( (GHashFunc) fsr_rid_hash, (GEqualFunc) fsr_rid_equal);
+       GHashTable* lookup = g_hash_table_new_full( (GHashFunc) fsr_rid_hash, (GEqualFunc) fsr_rid_equal, destroy_key, destroy_val);
        GList *list = NULL;
        fs_rid pred;
        if (FSR_DO_DOM(reasoning)) {
-           fs_rid_set *dom_preds = NULL;
+           fs_rid_vector *dom_preds = NULL;
            list = g_hash_table_get_keys(domains);
            while(list) {
                pred = *((fs_rid *) list->data);
@@ -967,9 +1000,12 @@ GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *rang
                list = g_list_next(list);
            }
        }
+       #ifdef DEBUG_RDFS
+       fs_error(LOG_ERR, "get_subject_predi size result (dom) %u",g_hash_table_size(lookup));
+       #endif
        if (FSR_DO_RAN(reasoning)) {
            list = g_hash_table_get_keys(ranges);
-           fs_rid_set *ranges_pred = NULL;
+           fs_rid_vector *ranges_pred = NULL;
            while(list) {
                pred = *((fs_rid *) list->data);
                fs_ptree *pt = fs_backend_get_ptree(be, pred, 1);
@@ -989,8 +1025,9 @@ GHashTable* get_subject_pred(fs_backend *be,GHashTable *domains,GHashTable *rang
                list = g_list_next(list);
            }
        }
-       //fs_error(LOG_ERR,"subjects type inferred table");
-       //dumpTable(lookup);
+       #ifdef DEBUG_RDFS
+       fs_error(LOG_ERR, "get_subject_predi size result %u",g_hash_table_size(lookup));
+       #endif
        return lookup;
 }
 

@@ -62,6 +62,13 @@
 #define FSR_DO_NONE(x)   (x == FSR_NONE_FLAG)
 #define FSR_DO_SOME(x)   (x != FSR_NONE_FLAG)
 
+struct _class_membership_dr {
+    GHashTable* lookup;
+    fs_rid_vector* keys;
+};
+
+typedef struct _class_membership_dr class_membership_dr;
+
 unsigned char * fsr_mtrx_to_msg(int type,fs_rid_vector **mtx,int cols);
 fs_rid_vector **fsr_msg_to_mtrx(unsigned char *msg);
 #endif
